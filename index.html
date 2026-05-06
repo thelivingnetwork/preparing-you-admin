@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Preparing You · Admin</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --teal:#1f4a4f; --teal-deep:#143034; --teal-soft:#2d6a70;
+    --terra:#c4673a; --terra-deep:#9c4a23; --terra-soft:rgba(196,103,58,.12);
+    --gold:#a0772a; --parch:#faf6e9; --cream:#fefcf4;
+    --walnut:#3a2818; --walnut-mid:#6f5641; --walnut-soft:#a08a72;
+    --line:#e8dec3; --danger:#9c3030; --success:#2d7a4f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--parch);color:var(--walnut);font-family:'Cormorant Garamond',Georgia,serif;font-size:16px;line-height:1.5}
+  h1,h2,h3,h4{font-family:'Spectral',serif;color:var(--teal);margin:0 0 8px;letter-spacing:.01em}
+  a{color:var(--terra-deep);text-decoration:none}
+  button{font-family:inherit;cursor:pointer}
+
+  /* Auth gate */
+  .gate{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+  .gate-box{max-width:380px;width:100%;background:var(--cream);border:1px solid var(--line);border-radius:12px;padding:28px;text-align:center}
+  .gate-box h1{font-size:22px;margin-bottom:6px}
+  .gate-box p{font-size:13px;color:var(--walnut-mid);font-style:italic;margin:0 0 18px}
+  .gate-box input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;font-family:inherit;font-size:14px;margin-bottom:8px}
+  .btn{background:var(--teal);color:#fff;border:none;border-radius:6px;padding:10px 16px;font-family:'Spectral',serif;font-size:13px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
+  .btn:hover{background:var(--teal-deep)}
+  .btn-terra{background:var(--terra)} .btn-terra:hover{background:var(--terra-deep)}
+  .btn-danger{background:var(--danger)} .btn-danger:hover{background:#7a2222}
+  .btn-sm{padding:5px 10px;font-size:11px}
+  .btn-link{background:none;border:1px solid var(--line);color:var(--walnut);padding:5px 10px;border-radius:5px;font-size:11px}
+
+  /* App shell */
+  .shell{display:none;min-height:100vh}
+  .shell.active{display:flex}
+  .sidebar{width:220px;background:var(--teal-deep);color:#fff;padding:20px 0;flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .sidebar-brand{font-family:'Spectral',serif;font-size:15px;font-weight:600;letter-spacing:.04em;padding:0 20px 14px;border-bottom:1px solid rgba(255,255,255,.12);color:#fff}
+  .sidebar-brand small{display:block;font-size:11px;color:rgba(255,255,255,.55);font-style:italic;letter-spacing:.04em;margin-top:3px;text-transform:none;font-weight:400}
+  .sidebar-nav{flex:1;padding:14px 0;overflow-y:auto}
+  .sidebar-btn{display:block;width:100%;background:none;border:none;color:rgba(255,255,255,.65);text-align:left;padding:9px 20px;font-family:'Spectral',serif;font-size:13px;letter-spacing:.04em}
+  .sidebar-btn:hover{background:rgba(255,255,255,.06);color:#fff}
+  .sidebar-btn.active{background:var(--terra);color:#fff}
+  .sidebar-foot{padding:14px 20px;border-top:1px solid rgba(255,255,255,.12);font-size:11px;color:rgba(255,255,255,.55)}
+  .sidebar-foot a{color:#fff;display:block;font-size:12px;margin-top:6px;cursor:pointer}
+
+  .main{flex:1;padding:24px 28px 60px;max-width:calc(100% - 220px)}
+  .main h1{font-size:22px;margin-bottom:18px;border-bottom:1px solid var(--line);padding-bottom:10px}
+  .panel{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+  .panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .panel-head h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;margin:0}
+  .panel-meta{font-size:12px;color:var(--walnut-mid);font-style:italic}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:8px;background:var(--parch);color:var(--walnut-mid);font-family:'Spectral',serif;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:rgba(196,103,58,.03)}
+
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-family:'Spectral',serif;font-weight:500}
+  .badge-pending{background:rgba(160,119,42,.18);color:var(--gold)}
+  .badge-accepted{background:rgba(45,122,79,.15);color:var(--success)}
+  .badge-declined{background:rgba(156,48,48,.15);color:var(--danger)}
+  .badge-active{background:rgba(45,122,79,.15);color:var(--success)}
+  .badge-inactive{background:rgba(112,112,112,.18);color:#666}
+
+  .input-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+  .input-row.full{grid-template-columns:1fr}
+  .input-row label{display:block;font-size:11px;color:var(--walnut-mid);font-style:italic;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+  .input-row input,.input-row textarea,.input-row select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:#fff;font-family:inherit;font-size:13px}
+
+  .empty{padding:40px 20px;text-align:center;color:var(--walnut-mid);font-style:italic}
+  .err{background:rgba(156,48,48,.08);border:1px solid rgba(156,48,48,.3);color:var(--danger);padding:9px 13px;border-radius:6px;font-size:13px;margin:10px 0}
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── Auth gate ───────────────────────── -->
+<div id="gate" class="gate">
+  <div class="gate-box">
+    <h1>Preparing You · Admin</h1>
+    <p>Sign in with an admin account.</p>
+    <div id="gate-err" class="err" style="display:none"></div>
+    <input id="gate-email" type="email" placeholder="email" autocomplete="email">
+    <input id="gate-pass"  type="password" placeholder="password" autocomplete="current-password">
+    <button class="btn" style="width:100%;margin-top:6px" onclick="adminSignIn()">Sign in</button>
+  </div>
+</div>
+
+<!-- ───────────────────────── Shell ───────────────────────── -->
+<div id="shell" class="shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">Preparing You<small>Admin</small></div>
+    <nav class="sidebar-nav">
+      <button class="sidebar-btn active" data-page="users"     onclick="showAdminPage('users')">Users</button>
+      <button class="sidebar-btn"        data-page="pcms"      onclick="showAdminPage('pcms')">PCMs</button>
+      <button class="sidebar-btn"        data-page="elections" onclick="showAdminPage('elections')">Elections</button>
+      <button class="sidebar-btn"        data-page="townhalls" onclick="showAdminPage('townhalls')">Townhalls</button>
+      <button class="sidebar-btn"        data-page="books"     onclick="showAdminPage('books')">Books</button>
+      <button class="sidebar-btn"        data-page="messages"  onclick="showAdminPage('messages')">Messages</button>
+      <button class="sidebar-btn"        data-page="paul"      onclick="showAdminPage('paul')">Paul Logs</button>
+      <button class="sidebar-btn"        data-page="admins"    onclick="showAdminPage('admins')">Admins</button>
+    </nav>
+    <div class="sidebar-foot">
+      <span id="me-email">—</span>
+      <a onclick="adminSignOut()">Sign out</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="page-users" class="admin-page">
+      <h1>Users <span class="panel-meta" id="users-count"></span></h1>
+      <div class="panel"><table id="users-table"><thead><tr><th>Name</th><th>Email</th><th>Region</th><th>PCM</th><th>Joined</th><th>Gateway</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-pcms" class="admin-page" style="display:none">
+      <h1>PCMs <span class="panel-meta" id="pcms-count"></span></h1>
+      <div class="panel"><table id="pcms-table"><thead><tr><th>Name</th><th>Region</th><th>Email</th><th>Phone</th><th>Telegram</th><th>Active</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-elections" class="admin-page" style="display:none">
+      <h1>Elections <span class="panel-meta" id="elections-count"></span></h1>
+      <div class="panel"><table id="elections-table"><thead><tr><th>Elector</th><th>PCM</th><th>Status</th><th>Elected</th><th>Responded</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-townhalls" class="admin-page" style="display:none">
+      <h1>Townhalls</h1>
+      <div class="panel">
+        <div class="panel-head"><h2>Schedule</h2><button class="btn btn-sm btn-terra" onclick="newTownhall()">+ New</button></div>
+        <table id="townhalls-table"><thead><tr><th>When</th><th>Title</th><th>Topic</th><th>Daily Room</th><th>Actions</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Hosts (moderators)</h2><button class="btn btn-sm btn-terra" onclick="newHost()">+ Add host</button></div>
+        <table id="hosts-table"><thead><tr><th>Name</th><th>Email</th><th>Added</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div id="page-books" class="admin-page" style="display:none">
+      <h1>Books</h1>
+      <div class="panel"><table id="books-table"><thead><tr><th>Order</th><th>Title</th><th>Slug</th><th>Description</th><th>Audio Overview</th><th>PDF Path</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-messages" class="admin-page" style="display:none">
+      <h1>Messages <span class="panel-meta" id="messages-count"></span></h1>
+      <div class="panel"><table id="messages-table"><thead><tr><th>When</th><th>From</th><th>To</th><th>Body</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-paul" class="admin-page" style="display:none">
+      <h1>Paul Chat Logs <span class="panel-meta" id="paul-count"></span></h1>
+      <div class="panel"><table id="paul-table"><thead><tr><th>When</th><th>User</th><th>Role</th><th>Message</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-admins" class="admin-page" style="display:none">
+      <h1>Admins</h1>
+      <div class="panel">
+        <div class="panel-head"><h2>Allowlist</h2><button class="btn btn-sm btn-terra" onclick="newAdmin()">+ Add admin</button></div>
+        <table id="admins-table"><thead><tr><th>Name</th><th>Email</th><th>Added</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ═════════════════════════ Config ═════════════════════════
+const SUPABASE_URL = 'https://qvcfgcwecykilbddgqzv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2Y2ZnY3dlY3lraWxiZGRncXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTQ2MzQsImV4cCI6MjA5MzUzMDYzNH0.cn-xvirE9JOG-m9vNFITVRiDLAZQQzE9yzoKEYUGUZg';
+const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let me = null;
+
+// ═════════════════════════ Auth ═════════════════════════
+async function init(){
+  const { data: { session } } = await _sb.auth.getSession();
+  if(session?.user){ await onSignedIn(session.user); }
+}
+init();
+
+async function adminSignIn(){
+  const email = document.getElementById('gate-email').value.trim();
+  const pass  = document.getElementById('gate-pass').value;
+  const err   = document.getElementById('gate-err');
+  err.style.display = 'none';
+  const { data, error } = await _sb.auth.signInWithPassword({ email, password: pass });
+  if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
+  await onSignedIn(data.user);
+}
+
+async function onSignedIn(user){
+  const { data: row } = await _sb.from('prep_admins').select('user_id').eq('user_id', user.id).maybeSingle();
+  if(!row){
+    const err = document.getElementById('gate-err');
+    err.textContent = 'This account is not authorised for the admin panel.';
+    err.style.display = 'block';
+    await _sb.auth.signOut();
+    return;
+  }
+  me = user;
+  document.getElementById('me-email').textContent = user.email;
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('shell').classList.add('active');
+  showAdminPage('users');
+}
+
+async function adminSignOut(){
+  await _sb.auth.signOut();
+  location.reload();
+}
+
+// ═════════════════════════ Page nav ═════════════════════════
+function showAdminPage(name){
+  document.querySelectorAll('.admin-page').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+name).style.display = 'block';
+  document.querySelector('.sidebar-btn[data-page="'+name+'"]').classList.add('active');
+  if(name==='users')      loadUsers();
+  if(name==='pcms')       loadPcms();
+  if(name==='elections')  loadElections();
+  if(name==='townhalls'){ loadTownhalls(); loadHosts(); }
+  if(name==='books')      loadBooks();
+  if(name==='messages')   loadMessages();
+  if(name==='paul')       loadPaul();
+  if(name==='admins')     loadAdmins();
+}
+
+// ═════════════════════════ Helpers ═════════════════════════
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmt(t){ if(!t) return '—'; const d=new Date(t); return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+function userMap(rows){ const m=new Map(); for(const r of rows||[]) m.set(r.id, r); return m; }
+
+// ═════════════════════════ Users ═════════════════════════
+async function loadUsers(){
+  const { data, error } = await _sb.from('prep_users').select('*').order('created_at',{ascending:false});
+  if(error){ alert(error.message); return; }
+  document.getElementById('users-count').textContent = '· ' + data.length;
+  const um = userMap(data);
+  const tb = document.querySelector('#users-table tbody');
+  tb.innerHTML = data.map(u => `
+    <tr>
+      <td>${esc(u.name)}</td>
+      <td>${esc(u.email)}</td>
+      <td>${esc(u.region||'—')}</td>
+      <td>${u.pcm_id ? esc(um.get(u.pcm_id)?.name || u.pcm_id.slice(0,8)) : '—'}</td>
+      <td>${fmt(u.created_at)}</td>
+      <td>${u.gateway_v3_at ? '<span class="badge badge-accepted">✓ all 3</span>' : (u.gateway_v2_at ? '2/3' : (u.gateway_v1_at ? '1/3' : '—'))}</td>
+      <td><button class="btn-link" onclick="confirmDelete('prep_users','${u.id}','user',\`${esc(u.email)}\`)">Delete</button></td>
+    </tr>
+  `).join('');
+}
+
+async function confirmDelete(table, id, label, name){
+  if(!confirm('Delete this '+label+': '+name+'? This cannot be undone.')) return;
+  const { error } = await _sb.from(table).delete().eq('id', id);
+  if(error) alert(error.message); else location.reload();
+}
+
+// ═════════════════════════ PCMs ═════════════════════════
+async function loadPcms(){
+  const { data } = await _sb.from('prep_pcms').select('*').order('name');
+  document.getElementById('pcms-count').textContent = '· ' + (data||[]).length;
+  const tb = document.querySelector('#pcms-table tbody');
+  tb.innerHTML = (data||[]).map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.region||'—')}</td>
+      <td>${esc(p.email||'—')}</td>
+      <td>${esc(p.phone||'—')}</td>
+      <td>${esc(p.telegram||'—')}</td>
+      <td><span class="badge ${p.active?'badge-active':'badge-inactive'}">${p.active?'active':'inactive'}</span></td>
+      <td>
+        <button class="btn-link" onclick="togglePcmActive('${p.id}', ${!p.active})">${p.active?'Deactivate':'Activate'}</button>
+      </td>
+    </tr>
+  `).join('');
+}
+async function togglePcmActive(id, active){
+  const { error } = await _sb.from('prep_pcms').update({ active }).eq('id', id);
+  if(error) alert(error.message); else loadPcms();
+}
+
+// ═════════════════════════ Elections ═════════════════════════
+async function loadElections(){
+  const { data: el } = await _sb.from('prep_pcm_elections').select('*').order('elected_at',{ascending:false}).limit(200);
+  const ids = [...new Set([...(el||[]).map(e=>e.elector_id), ...(el||[]).map(e=>e.pcm_id)])];
+  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const um = userMap(us||[]);
+  document.getElementById('elections-count').textContent = '· ' + (el||[]).length;
+  const tb = document.querySelector('#elections-table tbody');
+  tb.innerHTML = (el||[]).map(e => {
+    const cls = 'badge-' + e.status;
+    return `<tr>
+      <td>${esc(um.get(e.elector_id)?.name || '—')}<div style="font-size:11px;color:var(--walnut-mid)">${esc(um.get(e.elector_id)?.email || '')}</div></td>
+      <td>${esc(um.get(e.pcm_id)?.name || '—')}</td>
+      <td><span class="badge ${cls}">${e.status}</span></td>
+      <td>${fmt(e.elected_at)}</td>
+      <td>${fmt(e.responded_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ═════════════════════════ Townhalls ═════════════════════════
+async function loadTownhalls(){
+  const { data } = await _sb.from('prep_townhalls').select('*').order('scheduled_at');
+  const tb = document.querySelector('#townhalls-table tbody');
+  tb.innerHTML = (data||[]).map(th => `
+    <tr>
+      <td>${fmt(th.scheduled_at)}</td>
+      <td><input class="input-edit" data-id="${th.id}" data-col="title" value="${esc(th.title||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="input-edit" data-id="${th.id}" data-col="topic" value="${esc(th.topic||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="input-edit" data-id="${th.id}" data-col="daily_room" value="${esc(th.daily_room||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td>
+        <button class="btn-link" onclick="saveTownhall(${th.id})">Save</button>
+        <button class="btn-link" onclick="rescheduleTownhall(${th.id})">Reschedule</button>
+        <button class="btn-link" style="color:var(--danger)" onclick="confirmDelete('prep_townhalls', ${th.id}, 'townhall', '${esc(th.title||'')}')">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+async function saveTownhall(id){
+  const fields = {};
+  document.querySelectorAll('.input-edit[data-id="'+id+'"]').forEach(i => fields[i.dataset.col] = i.value);
+  const { error } = await _sb.from('prep_townhalls').update(fields).eq('id', id);
+  if(error) alert(error.message); else loadTownhalls();
+}
+async function rescheduleTownhall(id){
+  const v = prompt('New date/time (ISO 8601, e.g. 2026-05-10T03:00:00Z for Sun 7pm PST):');
+  if(!v) return;
+  const { error } = await _sb.from('prep_townhalls').update({ scheduled_at: v }).eq('id', id);
+  if(error) alert(error.message); else loadTownhalls();
+}
+async function newTownhall(){
+  const at = prompt('Date/time (ISO 8601):'); if(!at) return;
+  const title = prompt('Title:', 'Weekly Townhall') || 'Townhall';
+  const { error } = await _sb.from('prep_townhalls').insert({ scheduled_at: at, title, topic: 'Open discussion', daily_room: 'preparing-you-townhall-' + Date.now().toString(36) });
+  if(error) alert(error.message); else loadTownhalls();
+}
+
+// ═════════════════════════ Hosts ═════════════════════════
+async function loadHosts(){
+  const { data: hosts } = await _sb.from('prep_townhall_hosts').select('user_id, added_at');
+  const ids = (hosts||[]).map(h=>h.user_id);
+  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const um = userMap(us||[]);
+  const tb = document.querySelector('#hosts-table tbody');
+  tb.innerHTML = (hosts||[]).map(h => `
+    <tr>
+      <td>${esc(um.get(h.user_id)?.name || h.user_id.slice(0,8))}</td>
+      <td>${esc(um.get(h.user_id)?.email || '')}</td>
+      <td>${fmt(h.added_at)}</td>
+      <td><button class="btn-link" style="color:var(--danger)" onclick="removeHost('${h.user_id}')">Remove</button></td>
+    </tr>
+  `).join('');
+}
+async function newHost(){
+  const email = prompt('Email of user to make a townhall host:');
+  if(!email) return;
+  const { data: u } = await _sb.from('prep_users').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
+  if(!u){ alert('No user with that email.'); return; }
+  const { error } = await _sb.from('prep_townhall_hosts').insert({ user_id: u.id });
+  if(error) alert(error.message); else loadHosts();
+}
+async function removeHost(uid){
+  if(!confirm('Remove this townhall host?')) return;
+  const { error } = await _sb.from('prep_townhall_hosts').delete().eq('user_id', uid);
+  if(error) alert(error.message); else loadHosts();
+}
+
+// ═════════════════════════ Books ═════════════════════════
+async function loadBooks(){
+  const { data } = await _sb.from('prep_books').select('*').order('order_index');
+  const tb = document.querySelector('#books-table tbody');
+  tb.innerHTML = (data||[]).map(b => `
+    <tr>
+      <td><input class="bk-edit" data-id="${b.id}" data-col="order_index" type="number" value="${b.order_index||0}" style="width:60px;border:1px solid var(--line);padding:4px;border-radius:4px"></td>
+      <td><input class="bk-edit" data-id="${b.id}" data-col="title" value="${esc(b.title)}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><span style="font-size:11px;color:var(--walnut-mid)">${esc(b.slug)}</span></td>
+      <td><input class="bk-edit" data-id="${b.id}" data-col="description" value="${esc(b.description||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="bk-edit" data-id="${b.id}" data-col="audio_overview_path" value="${esc(b.audio_overview_path||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="bk-edit" data-id="${b.id}" data-col="pdf_storage_path" value="${esc(b.pdf_storage_path||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><button class="btn-link" onclick="saveBook(${b.id})">Save</button></td>
+    </tr>
+  `).join('');
+}
+async function saveBook(id){
+  const fields = {};
+  document.querySelectorAll('.bk-edit[data-id="'+id+'"]').forEach(i => {
+    fields[i.dataset.col] = i.type === 'number' ? parseInt(i.value, 10) || 0 : i.value;
+  });
+  const { error } = await _sb.from('prep_books').update(fields).eq('id', id);
+  if(error) alert(error.message); else loadBooks();
+}
+
+// ═════════════════════════ Messages monitor ═════════════════════════
+async function loadMessages(){
+  const { data } = await _sb.from('prep_messages').select('*').order('created_at',{ascending:false}).limit(200);
+  const ids = [...new Set([...(data||[]).map(m=>m.sender_id), ...(data||[]).map(m=>m.recipient_id)])];
+  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const um = userMap(us||[]);
+  document.getElementById('messages-count').textContent = '· ' + (data||[]).length;
+  const tb = document.querySelector('#messages-table tbody');
+  tb.innerHTML = (data||[]).map(m => `
+    <tr>
+      <td style="white-space:nowrap">${fmt(m.created_at)}</td>
+      <td>${esc(um.get(m.sender_id)?.name || '—')}</td>
+      <td>${esc(um.get(m.recipient_id)?.name || '—')}</td>
+      <td style="max-width:600px;white-space:pre-wrap">${esc(m.body)}</td>
+    </tr>
+  `).join('');
+}
+
+// ═════════════════════════ Paul logs ═════════════════════════
+async function loadPaul(){
+  const { data } = await _sb.from('prep_paul_chats').select('*').order('created_at',{ascending:false}).limit(200);
+  const ids = [...new Set((data||[]).map(m=>m.user_id))];
+  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const um = userMap(us||[]);
+  document.getElementById('paul-count').textContent = '· ' + (data||[]).length;
+  const tb = document.querySelector('#paul-table tbody');
+  tb.innerHTML = (data||[]).map(m => `
+    <tr>
+      <td style="white-space:nowrap">${fmt(m.created_at)}</td>
+      <td>${esc(um.get(m.user_id)?.name || '—')}</td>
+      <td>${esc(m.role)}</td>
+      <td style="max-width:700px;white-space:pre-wrap">${esc(m.message)}</td>
+    </tr>
+  `).join('');
+}
+
+// ═════════════════════════ Admins ═════════════════════════
+async function loadAdmins(){
+  const { data: admins } = await _sb.from('prep_admins').select('user_id, added_at');
+  const ids = (admins||[]).map(a=>a.user_id);
+  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const um = userMap(us||[]);
+  const tb = document.querySelector('#admins-table tbody');
+  tb.innerHTML = (admins||[]).map(a => `
+    <tr>
+      <td>${esc(um.get(a.user_id)?.name || a.user_id.slice(0,8))}</td>
+      <td>${esc(um.get(a.user_id)?.email || '')}</td>
+      <td>${fmt(a.added_at)}</td>
+      <td>${a.user_id === me.id ? '<span style="font-size:11px;color:var(--walnut-mid);font-style:italic">(you)</span>' : '<button class="btn-link" style="color:var(--danger)" onclick="removeAdmin(\''+a.user_id+'\')">Remove</button>'}</td>
+    </tr>
+  `).join('');
+}
+async function newAdmin(){
+  const email = prompt('Email of user to grant admin access:');
+  if(!email) return;
+  const { data: u } = await _sb.from('prep_users').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
+  if(!u){ alert('No user with that email exists in prep_users.'); return; }
+  const { error } = await _sb.from('prep_admins').insert({ user_id: u.id });
+  if(error) alert(error.message); else loadAdmins();
+}
+async function removeAdmin(uid){
+  if(!confirm('Remove this admin?')) return;
+  const { error } = await _sb.from('prep_admins').delete().eq('user_id', uid);
+  if(error) alert(error.message); else loadAdmins();
+}
+</script>
+</body>
+</html>

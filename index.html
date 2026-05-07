@@ -91,11 +91,29 @@
 <div id="gate" class="gate">
   <div class="gate-box">
     <h1>Preparing You · Admin</h1>
-    <p>Sign in with an admin account.</p>
+    <p id="gate-sub">Sign in with an admin account.</p>
     <div id="gate-err" class="err" style="display:none"></div>
-    <input id="gate-email" type="email" placeholder="email" autocomplete="email">
-    <input id="gate-pass"  type="password" placeholder="password" autocomplete="current-password">
-    <button class="btn" style="width:100%;margin-top:6px" onclick="adminSignIn()">Sign in</button>
+    <div id="gate-ok" style="display:none;background:rgba(45,122,79,.1);border:1px solid rgba(45,122,79,.3);color:var(--success);padding:9px 13px;border-radius:6px;font-size:13px;margin-bottom:10px;font-style:italic"></div>
+
+    <div id="panel-signin">
+      <input id="gate-email" type="email" placeholder="email" autocomplete="email">
+      <input id="gate-pass"  type="password" placeholder="password" autocomplete="current-password">
+      <button class="btn" style="width:100%;margin-top:6px" onclick="adminSignIn()">Sign in</button>
+      <div style="text-align:center;margin-top:10px"><a onclick="openForgot()" style="font-size:12px;color:var(--walnut-mid);font-style:italic;cursor:pointer;text-decoration:underline">Forgot your password?</a></div>
+    </div>
+
+    <div id="panel-forgot" style="display:none">
+      <p style="font-size:13px;color:var(--walnut-mid);font-style:italic;margin:0 0 10px">Enter your email and we'll send a reset link.</p>
+      <input id="forgot-email" type="email" placeholder="email" autocomplete="email">
+      <button class="btn" style="width:100%;margin-top:6px" onclick="sendForgot()">Send reset link</button>
+      <div style="text-align:center;margin-top:10px"><a onclick="showSignin()" style="font-size:12px;color:var(--walnut-mid);font-style:italic;cursor:pointer;text-decoration:underline">← Back to sign in</a></div>
+    </div>
+
+    <div id="panel-reset" style="display:none">
+      <p style="font-size:13px;color:var(--walnut-mid);font-style:italic;margin:0 0 10px">Choose a new password for your admin account.</p>
+      <input id="reset-pw" type="password" placeholder="new password (min 8 chars)" autocomplete="new-password">
+      <button class="btn" style="width:100%;margin-top:6px" onclick="doReset()">Set new password</button>
+    </div>
   </div>
 </div>
 
@@ -184,11 +202,35 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let me = null;
 
 // ═════════════════════════ Auth ═════════════════════════
+function _showPanel(name){
+  ['signin','forgot','reset'].forEach(n => {
+    const p = document.getElementById('panel-'+n); if(p) p.style.display = (n===name) ? 'block' : 'none';
+  });
+  document.getElementById('gate-err').style.display = 'none';
+  document.getElementById('gate-ok').style.display = 'none';
+}
+function showSignin(){ _showPanel('signin'); }
+function openForgot(){
+  document.getElementById('forgot-email').value = document.getElementById('gate-email').value || '';
+  _showPanel('forgot');
+}
+
 async function init(){
+  // Recovery flow: Supabase puts the access token in the URL hash (type=recovery).
+  // The supabase-js client picks it up; we just need to surface the reset panel.
+  const hash = window.location.hash || '';
+  const params = new URL(window.location.href).searchParams;
+  if(hash.includes('type=recovery') || params.get('reset') === '1'){
+    _showPanel('reset');
+    return;
+  }
   const { data: { session } } = await _sb.auth.getSession();
   if(session?.user){ await onSignedIn(session.user); }
 }
 init();
+
+// React to recovery state arriving asynchronously after supabase parses the hash
+_sb.auth.onAuthStateChange((event) => { if(event === 'PASSWORD_RECOVERY') _showPanel('reset'); });
 
 async function adminSignIn(){
   const email = document.getElementById('gate-email').value.trim();
@@ -198,6 +240,33 @@ async function adminSignIn(){
   const { data, error } = await _sb.auth.signInWithPassword({ email, password: pass });
   if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
   await onSignedIn(data.user);
+}
+
+async function sendForgot(){
+  const email = document.getElementById('forgot-email').value.trim().toLowerCase();
+  const err   = document.getElementById('gate-err');
+  const ok    = document.getElementById('gate-ok');
+  err.style.display = 'none'; ok.style.display = 'none';
+  if(!email){ err.textContent = 'Enter your email.'; err.style.display = 'block'; return; }
+  const { error } = await _sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/?reset=1'
+  });
+  if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
+  ok.textContent = 'Check your email for a reset link.';
+  ok.style.display = 'block';
+}
+
+async function doReset(){
+  const pw  = document.getElementById('reset-pw').value;
+  const err = document.getElementById('gate-err');
+  err.style.display = 'none';
+  if(!pw || pw.length < 8){ err.textContent = 'Password must be at least 8 characters.'; err.style.display = 'block'; return; }
+  const { error } = await _sb.auth.updateUser({ password: pw });
+  if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
+  history.replaceState({}, '', window.location.pathname);
+  const { data: { session } } = await _sb.auth.getSession();
+  if(session?.user){ await onSignedIn(session.user); }
+  else _showPanel('signin');
 }
 
 async function onSignedIn(user){

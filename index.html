@@ -402,22 +402,47 @@ async function loadTownhalls(){
   tb.innerHTML = (data||[]).map(th => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return `
-    <tr>
+    <tr data-th-id="${th.id}">
       <td>
         <input type="datetime-local" class="th-edit" data-id="${th.id}" data-col="scheduled_at"
+          data-original="${_toLocalInput(th.scheduled_at)}"
           value="${_toLocalInput(th.scheduled_at)}"
+          oninput="markTownhallDirty(${th.id})"
           style="border:1px solid var(--line);padding:4px 6px;border-radius:4px;font-family:inherit;font-size:13px">
         <div style="font-size:10px;color:var(--walnut-mid);font-style:italic;margin-top:3px">${tz}</div>
       </td>
-      <td><input class="th-edit" data-id="${th.id}" data-col="title" value="${esc(th.title||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><input class="th-edit" data-id="${th.id}" data-col="topic" value="${esc(th.topic||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><input class="th-edit" data-id="${th.id}" data-col="daily_room" value="${esc(th.daily_room||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="title" data-original="${esc(th.title||'')}" value="${esc(th.title||'')}" oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="topic" data-original="${esc(th.topic||'')}" value="${esc(th.topic||'')}" oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="daily_room" data-original="${esc(th.daily_room||'')}" value="${esc(th.daily_room||'')}" oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
       <td>
-        <button class="btn-link" onclick="saveTownhall(${th.id})">Save</button>
+        <button class="btn-link th-save-btn" data-id="${th.id}" onclick="saveTownhall(${th.id})" style="transition:all .15s">Save</button>
         <button class="btn-link" style="color:var(--danger)" onclick="confirmDelete('prep_townhalls', ${th.id}, 'townhall', '${esc(th.title||'')}')">Delete</button>
       </td>
     </tr>`;
   }).join('');
+}
+
+function markTownhallDirty(id){
+  const inputs = document.querySelectorAll('.th-edit[data-id="'+id+'"]');
+  let dirty = false;
+  inputs.forEach(i => { if(i.value !== i.dataset.original) dirty = true; });
+  const btn = document.querySelector('.th-save-btn[data-id="'+id+'"]');
+  if(!btn) return;
+  if(dirty){
+    btn.style.background = 'var(--terra)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'var(--terra)';
+    btn.style.boxShadow = '0 0 0 3px rgba(196,103,58,.18)';
+    btn.style.fontWeight = '600';
+    btn.textContent = 'Save changes';
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.style.boxShadow = '';
+    btn.style.fontWeight = '';
+    btn.textContent = 'Save';
+  }
 }
 
 async function saveTownhall(id){

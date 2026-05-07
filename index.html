@@ -469,11 +469,18 @@ function markTownhallDirty(id){
 
 async function saveTownhall(id){
   const fields = {};
+  let scheduleChanged = false;
   document.querySelectorAll('.th-edit[data-id="'+id+'"]').forEach(i => {
-    if(i.dataset.col === 'scheduled_at') fields.scheduled_at = _localInputToIso(i.value);
-    else fields[i.dataset.col] = i.value;
+    if(i.dataset.col === 'scheduled_at'){
+      fields.scheduled_at = _localInputToIso(i.value);
+      if(i.value !== i.dataset.original) scheduleChanged = true;
+    } else {
+      fields[i.dataset.col] = i.value;
+    }
   });
   if(!fields.scheduled_at){ alert('Pick a date and time.'); return; }
+  // Reschedule resets the reminder flag so the cron fires again at the new time
+  if(scheduleChanged){ fields.reminder_sent_at = null; }
   const { error } = await _sb.from('prep_townhalls').update(fields).eq('id', id);
   if(error) alert(error.message); else loadTownhalls();
 }

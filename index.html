@@ -382,37 +382,65 @@ async function loadElections(){
 }
 
 // ═════════════════════════ Townhalls ═════════════════════════
+// Convert an ISO UTC timestamp to the value format datetime-local expects:
+// "YYYY-MM-DDTHH:MM" in the viewer's local timezone.
+function _toLocalInput(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function _localInputToIso(v){
+  if(!v) return null;
+  // datetime-local has no timezone — Date() parses it as local, which is what we want
+  return new Date(v).toISOString();
+}
+
 async function loadTownhalls(){
   const { data } = await _sb.from('prep_townhalls').select('*').order('scheduled_at');
   const tb = document.querySelector('#townhalls-table tbody');
-  tb.innerHTML = (data||[]).map(th => `
+  tb.innerHTML = (data||[]).map(th => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return `
     <tr>
-      <td>${fmt(th.scheduled_at)}</td>
-      <td><input class="input-edit" data-id="${th.id}" data-col="title" value="${esc(th.title||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><input class="input-edit" data-id="${th.id}" data-col="topic" value="${esc(th.topic||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><input class="input-edit" data-id="${th.id}" data-col="daily_room" value="${esc(th.daily_room||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td>
+        <input type="datetime-local" class="th-edit" data-id="${th.id}" data-col="scheduled_at"
+          value="${_toLocalInput(th.scheduled_at)}"
+          style="border:1px solid var(--line);padding:4px 6px;border-radius:4px;font-family:inherit;font-size:13px">
+        <div style="font-size:10px;color:var(--walnut-mid);font-style:italic;margin-top:3px">${tz}</div>
+      </td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="title" value="${esc(th.title||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="topic" value="${esc(th.topic||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="daily_room" value="${esc(th.daily_room||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
       <td>
         <button class="btn-link" onclick="saveTownhall(${th.id})">Save</button>
-        <button class="btn-link" onclick="rescheduleTownhall(${th.id})">Reschedule</button>
         <button class="btn-link" style="color:var(--danger)" onclick="confirmDelete('prep_townhalls', ${th.id}, 'townhall', '${esc(th.title||'')}')">Delete</button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
+
 async function saveTownhall(id){
   const fields = {};
-  document.querySelectorAll('.input-edit[data-id="'+id+'"]').forEach(i => fields[i.dataset.col] = i.value);
+  document.querySelectorAll('.th-edit[data-id="'+id+'"]').forEach(i => {
+    if(i.dataset.col === 'scheduled_at') fields.scheduled_at = _localInputToIso(i.value);
+    else fields[i.dataset.col] = i.value;
+  });
+  if(!fields.scheduled_at){ alert('Pick a date and time.'); return; }
   const { error } = await _sb.from('prep_townhalls').update(fields).eq('id', id);
   if(error) alert(error.message); else loadTownhalls();
 }
-async function rescheduleTownhall(id){
-  const v = prompt('New date/time (ISO 8601, e.g. 2026-05-10T03:00:00Z for Sun 7pm PST):');
-  if(!v) return;
-  const { error } = await _sb.from('prep_townhalls').update({ scheduled_at: v }).eq('id', id);
-  if(error) alert(error.message); else loadTownhalls();
-}
+
 async function newTownhall(){
-  const at = prompt('Date/time (ISO 8601):'); if(!at) return;
+  // Default to next Sunday 19:00 in the viewer's local time
+  const d = new Date();
+  d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
+  d.setHours(19, 0, 0, 0);
+  const isoLocal = _toLocalInput(d.toISOString());
+  const v = prompt('When? (your local time, e.g. ' + isoLocal + ')', isoLocal);
+  if(!v) return;
+  const at = _localInputToIso(v);
+  if(!at){ alert('Could not parse date.'); return; }
   const title = prompt('Title:', 'Weekly Townhall') || 'Townhall';
   const { error } = await _sb.from('prep_townhalls').insert({ scheduled_at: at, title, topic: 'Open discussion', daily_room: 'preparing-you-townhall-' + Date.now().toString(36) });
   if(error) alert(error.message); else loadTownhalls();

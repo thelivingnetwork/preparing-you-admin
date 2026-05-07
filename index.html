@@ -19,6 +19,12 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:var(--parch);color:var(--walnut);font-family:'Cormorant Garamond',Georgia,serif;font-size:16px;line-height:1.5}
+  body{
+    background-image:
+      radial-gradient(circle at 25% 15%, rgba(196,103,58,.04) 0, transparent 40%),
+      radial-gradient(circle at 75% 85%, rgba(31,74,79,.05) 0, transparent 50%);
+    background-attachment:fixed;
+  }
   h1,h2,h3,h4{font-family:'Spectral',serif;color:var(--teal);margin:0 0 8px;letter-spacing:.01em}
   a{color:var(--terra-deep);text-decoration:none}
   button{font-family:inherit;cursor:pointer}
@@ -40,7 +46,8 @@
   .shell{display:none;min-height:100vh}
   .shell.active{display:flex}
   .sidebar{width:220px;background:var(--teal-deep);color:#fff;padding:20px 0;flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-  .sidebar-brand{font-family:'Spectral',serif;font-size:15px;font-weight:600;letter-spacing:.04em;padding:0 20px 14px;border-bottom:1px solid rgba(255,255,255,.12);color:#fff}
+  .sidebar-brand{display:flex;align-items:center;gap:12px;font-family:'Spectral',serif;font-size:15px;font-weight:600;letter-spacing:.04em;padding:0 20px 14px;border-bottom:1px solid rgba(255,255,255,.12);color:#fff;border-bottom:3px solid var(--terra)}
+  .sidebar-brand img{width:34px;height:34px;background:var(--cream);border-radius:50%;padding:3px;object-fit:contain;box-shadow:0 1px 3px rgba(20,48,52,.4);flex-shrink:0}
   .sidebar-brand small{display:block;font-size:11px;color:rgba(255,255,255,.55);font-style:italic;letter-spacing:.04em;margin-top:3px;text-transform:none;font-weight:400}
   .sidebar-nav{flex:1;padding:14px 0;overflow-y:auto}
   .sidebar-btn{display:block;width:100%;background:none;border:none;color:rgba(255,255,255,.65);text-align:left;padding:9px 20px;font-family:'Spectral',serif;font-size:13px;letter-spacing:.04em}
@@ -94,7 +101,10 @@
 <!-- ───────────────────────── Shell ───────────────────────── -->
 <div id="shell" class="shell">
   <aside class="sidebar">
-    <div class="sidebar-brand">Preparing You<small>Admin</small></div>
+    <div class="sidebar-brand">
+      <img src="/ark-purple.png" alt="">
+      <div>Preparing You<small>Admin</small></div>
+    </div>
     <nav class="sidebar-nav">
       <button class="sidebar-btn active" data-page="users"     onclick="showAdminPage('users')">Users</button>
       <button class="sidebar-btn"        data-page="pcms"      onclick="showAdminPage('pcms')">PCMs</button>

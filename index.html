@@ -160,7 +160,7 @@
       <h1>Townhalls</h1>
       <div class="panel">
         <div class="panel-head"><h2>Schedule</h2><button class="btn btn-sm btn-terra" onclick="newTownhall()">+ New</button></div>
-        <table id="townhalls-table"><thead><tr><th>When</th><th>Title</th><th>Topic</th><th>Daily Room</th><th>Actions</th></tr></thead><tbody></tbody></table>
+        <table id="townhalls-table"><thead><tr><th>When</th><th>Title</th><th>Topic</th><th>Daily Room</th><th>Recording URL</th><th>Actions</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Hosts (moderators)</h2><button class="btn btn-sm btn-terra" onclick="newHost()">+ Add host</button></div>
@@ -441,6 +441,7 @@ async function loadTownhalls(){
       <td><input class="th-edit" data-id="${th.id}" data-col="title" data-original="${esc(th.title||'')}" value="${esc(th.title||'')}" oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
       <td><input class="th-edit" data-id="${th.id}" data-col="topic" data-original="${esc(th.topic||'')}" value="${esc(th.topic||'')}" oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
       <td><input class="th-edit" data-id="${th.id}" data-col="daily_room" data-original="${esc(th.daily_room||'')}" value="${esc(th.daily_room||'')}" oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
+      <td><input class="th-edit" data-id="${th.id}" data-col="recording_url" data-original="${esc(th.recording_url||'')}" value="${esc(th.recording_url||'')}" placeholder="https://..." oninput="markTownhallDirty(${th.id})" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
       <td>
         <button class="btn-link th-save-btn" data-id="${th.id}" onclick="saveTownhall(${th.id})" style="transition:all .15s">Save</button>
         <button class="btn-link" style="color:var(--danger)" onclick="confirmDelete('prep_townhalls', ${th.id}, 'townhall', '${esc(th.title||'')}')">Delete</button>

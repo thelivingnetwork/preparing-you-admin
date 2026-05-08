@@ -166,6 +166,10 @@
         <div class="panel-head"><h2>Hosts (moderators)</h2><button class="btn btn-sm btn-terra" onclick="newHost()">+ Add host</button></div>
         <table id="hosts-table"><thead><tr><th>Name</th><th>Email</th><th>Added</th><th></th></tr></thead><tbody></tbody></table>
       </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Log</h2><span class="panel-meta">Lifecycle of every scheduled townhall</span></div>
+        <table id="townhall-log-table"><thead><tr><th>Scheduled</th><th>Title</th><th>Reminder sent</th><th>Started</th><th>Ended</th><th>Duration</th></tr></thead><tbody></tbody></table>
+      </div>
     </div>
 
     <div id="page-books" class="admin-page" style="display:none">
@@ -299,7 +303,7 @@ function showAdminPage(name){
   if(name==='users')      loadUsers();
   if(name==='pcms')       loadPcms();
   if(name==='elections')  loadElections();
-  if(name==='townhalls'){ loadTownhalls(); loadHosts(); }
+  if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); }
   if(name==='books')      loadBooks();
   if(name==='messages')   loadMessages();
   if(name==='paul')       loadPaul();
@@ -502,6 +506,42 @@ async function newTownhall(){
 }
 
 // ═════════════════════════ Hosts ═════════════════════════
+function _formatDuration(startIso, endIso){
+  if(!startIso || !endIso) return '—';
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if(ms < 0) return '—';
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  if(m === 0) return s + 's';
+  return m + 'm ' + s + 's';
+}
+
+async function loadTownhallLog(){
+  const { data } = await _sb.from('prep_townhalls')
+    .select('id, scheduled_at, title, reminder_sent_at, live_at, ended_at, recording_url')
+    .order('scheduled_at', { ascending:false }).limit(100);
+  const tb = document.querySelector('#townhall-log-table tbody');
+  if(!tb) return;
+  if(!data || !data.length){
+    tb.innerHTML = '<tr><td colspan="6" class="empty">No townhalls yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML = data.map(th => {
+    const isLive = !!th.live_at && !th.ended_at;
+    const titleCell = `${esc(th.title || '—')}` +
+      (isLive ? ' <span class="badge" style="background:rgba(196,103,58,.15);color:var(--terra-deep);margin-left:6px">● LIVE</span>' : '');
+    const recCell = th.recording_url ? `<br><a href="${esc(th.recording_url)}" target="_blank" style="font-size:11px">recording ↗</a>` : '';
+    return `<tr>
+      <td style="white-space:nowrap">${fmt(th.scheduled_at)}</td>
+      <td>${titleCell}${recCell}</td>
+      <td>${fmt(th.reminder_sent_at)}</td>
+      <td>${fmt(th.live_at)}</td>
+      <td>${fmt(th.ended_at)}</td>
+      <td>${_formatDuration(th.live_at, th.ended_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
 async function loadHosts(){
   const { data: hosts } = await _sb.from('prep_townhall_hosts').select('user_id, added_at');
   const ids = (hosts||[]).map(h=>h.user_id);

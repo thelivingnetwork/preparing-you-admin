@@ -143,7 +143,13 @@
   <main class="main">
     <div id="page-users" class="admin-page">
       <h1>Users <span class="panel-meta" id="users-count"></span></h1>
-      <div class="panel"><table id="users-table"><thead><tr><th>Name</th><th>Email</th><th>Region</th><th>PCM</th><th>Joined</th><th>Gateway</th><th>TLN</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      <div class="panel">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-terra" onclick="openBroadcast('selected')">✉ Message selected (<span id="sel-count">0</span>)</button>
+          <button class="btn btn-sm" onclick="openBroadcast('all')">✉ Message all users</button>
+        </div>
+        <table id="users-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all" onclick="toggleSelectAll(this)" title="Select all"></th><th>Name</th><th>Email</th><th>Region</th><th>PCM</th><th>Joined</th><th>Gateway</th><th>TLN</th><th>Actions</th></tr></thead><tbody></tbody></table>
+      </div>
     </div>
 
     <div id="page-pcms" class="admin-page" style="display:none">
@@ -195,6 +201,20 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- ───────────────────────── Broadcast compose modal ───────────────────────── -->
+<div id="broadcast-modal" style="display:none;position:fixed;inset:0;background:rgba(58,40,24,.45);z-index:100;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--cream);border:1px solid var(--line);border-radius:12px;max-width:480px;width:100%;padding:22px">
+    <h2 style="font-size:16px;margin-bottom:4px">Send message</h2>
+    <p id="broadcast-sub" class="panel-meta" style="margin:0 0 12px">—</p>
+    <textarea id="broadcast-body" rows="5" placeholder="Write your message…" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit;font-size:14px;line-height:1.4;resize:vertical;white-space:pre-wrap;overflow-wrap:break-word"></textarea>
+    <div id="broadcast-err" class="err" style="display:none"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="btn-link" onclick="closeBroadcast()">Cancel</button>
+      <button class="btn btn-terra" id="broadcast-send" onclick="sendBroadcast()">Send</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -324,6 +344,7 @@ async function loadUsers(){
   const tb = document.querySelector('#users-table tbody');
   tb.innerHTML = data.map(u => `
     <tr>
+      <td><input type="checkbox" class="user-sel" value="${u.id}" data-name="${esc(u.name||u.email)}" onchange="updateSelCount()"></td>
       <td>${esc(u.name)}</td>
       <td>${esc(u.email)}</td>
       <td>${esc(u.region||'—')}</td>
@@ -334,6 +355,68 @@ async function loadUsers(){
       <td><button class="btn-link" onclick="adminDeleteUser('${u.id}', \`${esc(u.email)}\`)">Delete</button></td>
     </tr>
   `).join('');
+  const selAll = document.getElementById('sel-all'); if(selAll) selAll.checked = false;
+  updateSelCount();
+}
+
+// ── Bulk-message selected / all users ─────────────────────────────
+let _broadcastMode = null;
+function selectedUserIds(){ return [...document.querySelectorAll('.user-sel:checked')].map(c => c.value); }
+function updateSelCount(){
+  const all = document.querySelectorAll('.user-sel');
+  const sel = selectedUserIds();
+  const c = document.getElementById('sel-count'); if(c) c.textContent = sel.length;
+  const selAll = document.getElementById('sel-all');
+  if(selAll) selAll.checked = all.length > 0 && sel.length === all.length;
+}
+function toggleSelectAll(cb){
+  document.querySelectorAll('.user-sel').forEach(c => c.checked = cb.checked);
+  updateSelCount();
+}
+function openBroadcast(mode){
+  let n = 0;
+  if(mode === 'selected'){
+    n = selectedUserIds().length;
+    if(!n){ alert('Select at least one user first.'); return; }
+  } else {
+    n = document.querySelectorAll('.user-sel').length;
+  }
+  _broadcastMode = mode;
+  document.getElementById('broadcast-sub').textContent =
+    mode === 'all' ? `To: all users (${n})` : `To: ${n} selected user${n===1?'':'s'}`;
+  document.getElementById('broadcast-body').value = '';
+  document.getElementById('broadcast-err').style.display = 'none';
+  document.getElementById('broadcast-modal').style.display = 'flex';
+  document.getElementById('broadcast-body').focus();
+}
+function closeBroadcast(){ document.getElementById('broadcast-modal').style.display = 'none'; _broadcastMode = null; }
+async function sendBroadcast(){
+  const body = document.getElementById('broadcast-body').value.trim();
+  const err = document.getElementById('broadcast-err');
+  if(!body){ err.textContent = 'Please write a message.'; err.style.display = 'block'; return; }
+  const btn = document.getElementById('broadcast-send');
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Sending…';
+  try {
+    const { data: { session } } = await _sb.auth.getSession();
+    if(!session?.access_token) throw new Error('Not signed in.');
+    const payload = _broadcastMode === 'all'
+      ? { toAll: true, body }
+      : { recipientIds: selectedUserIds(), body };
+    if(_broadcastMode !== 'all' && !payload.recipientIds.length) throw new Error('No users selected.');
+    const r = await fetch(_SERVER_URL + '/admin/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || ('status ' + r.status));
+    closeBroadcast();
+    alert('Message sent to ' + j.sent + ' user' + (j.sent === 1 ? '' : 's') + '.');
+  } catch(e){
+    err.textContent = 'Could not send: ' + e.message; err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
 }
 
 // User delete must remove auth.users too (prep_users alone leaves the email

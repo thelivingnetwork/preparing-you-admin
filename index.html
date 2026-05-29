@@ -86,6 +86,36 @@
 
   .empty{padding:40px 20px;text-align:center;color:var(--walnut-mid);font-style:italic}
   .err{background:rgba(156,48,48,.08);border:1px solid rgba(156,48,48,.3);color:var(--danger);padding:9px 13px;border-radius:6px;font-size:13px;margin:10px 0}
+
+  /* Mobile top bar + slide-in nav drawer (hidden on desktop) */
+  .topbar{display:none}
+  .nav-overlay{display:none}
+
+  @media (max-width:760px){
+    .shell.active{flex-direction:column}
+
+    .topbar{display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;
+      background:var(--teal-deep);color:#fff;padding:10px 14px;border-bottom:3px solid var(--terra)}
+    .topbar img{width:30px;height:30px;background:var(--cream);border-radius:50%;padding:3px;object-fit:contain;flex-shrink:0}
+    .topbar-title{font-family:'Spectral',serif;font-size:15px;font-weight:600;letter-spacing:.04em;flex:1}
+    .hamburger{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;
+      width:40px;height:36px;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+    .sidebar{position:fixed;top:0;left:0;height:100vh;width:240px;max-width:84vw;z-index:50;
+      transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 16px rgba(0,0,0,.3)}
+    .sidebar.open{transform:translateX(0)}
+    .nav-overlay.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40}
+    .sidebar-btn{padding:13px 20px;font-size:14px}
+
+    .main{max-width:100%;padding:16px 14px 60px}
+    .main h1{font-size:19px;margin-bottom:14px}
+    .panel{padding:12px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    table{min-width:600px}
+    .panel-head{flex-wrap:wrap;gap:8px}
+    .input-row{grid-template-columns:1fr}
+    /* 16px inputs stop iOS from auto-zooming on focus */
+    .gate-box input,.input-row input,.input-row textarea,.input-row select{font-size:16px}
+  }
 </style>
 </head>
 <body>
@@ -122,7 +152,13 @@
 
 <!-- ───────────────────────── Shell ───────────────────────── -->
 <div id="shell" class="shell">
-  <aside class="sidebar">
+  <header class="topbar">
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
+    <img src="/ark-purple.png" alt="">
+    <div class="topbar-title">Preparing You · Admin</div>
+  </header>
+  <div class="nav-overlay" id="nav-overlay" onclick="closeNav()"></div>
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <img src="/ark-purple.png" alt="">
       <div>Preparing You<small>Admin</small></div>
@@ -298,7 +334,16 @@ async function adminSignOut(){
 }
 
 // ═════════════════════════ Page nav ═════════════════════════
+function toggleNav(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('nav-overlay').classList.toggle('open');
+}
+function closeNav(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('nav-overlay').classList.remove('open');
+}
 function showAdminPage(name){
+  closeNav();
   document.querySelectorAll('.admin-page').forEach(p => p.style.display = 'none');
   document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-'+name).style.display = 'block';

@@ -169,6 +169,7 @@
       <button class="sidebar-btn"        data-page="elections" onclick="showAdminPage('elections')">Elections</button>
       <button class="sidebar-btn"        data-page="townhalls" onclick="showAdminPage('townhalls')">Townhalls</button>
       <button class="sidebar-btn"        data-page="books"     onclick="showAdminPage('books')">Books</button>
+      <button class="sidebar-btn"        data-page="broadcast" onclick="showAdminPage('broadcast')">Broadcast</button>
       <button class="sidebar-btn"        data-page="messages"  onclick="showAdminPage('messages')">Messages</button>
       <button class="sidebar-btn"        data-page="paul"      onclick="showAdminPage('paul')">Paul Logs</button>
       <button class="sidebar-btn"        data-page="admins"    onclick="showAdminPage('admins')">Admins</button>
@@ -235,6 +236,34 @@
     <div id="page-paul" class="admin-page" style="display:none">
       <h1>Paul Chat Logs <span class="panel-meta" id="paul-count"></span></h1>
       <div class="panel"><table id="paul-table"><thead><tr><th>When</th><th>User</th><th>Role</th><th>Message</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="page-broadcast" class="admin-page" style="display:none">
+      <h1>Broadcast</h1>
+      <div class="panel">
+        <div class="panel-head"><h2>Announce to all users</h2></div>
+        <p style="font-size:13px;color:#555;line-height:1.6;margin:6px 0 12px">
+          Sends a one-way notification to <strong>every user</strong> — it appears in their
+          notification bell and as a push notification (even when the app is closed).
+          This is one-way; if a user needs help they contact their PCM, not here.
+        </p>
+        <div class="input-row" style="display:flex;gap:10px;align-items:flex-start">
+          <div style="flex:0 0 64px">
+            <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Icon</label>
+            <input id="bc-icon" type="text" value="📢" maxlength="4" style="text-align:center">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Message</label>
+            <textarea id="bc-text" rows="3" placeholder="Your announcement to all users…"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-terra" style="margin-top:12px" onclick="sendBroadcast()">Send to all users</button>
+        <span id="bc-status" style="margin-left:12px;font-size:13px;color:#555"></span>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Recent broadcasts</h2></div>
+        <table id="broadcasts-table"><thead><tr><th>When</th><th>Icon</th><th>Message</th><th>Recipients</th></tr></thead><tbody></tbody></table>
+      </div>
     </div>
 
     <div id="page-admins" class="admin-page" style="display:none">
@@ -364,6 +393,7 @@ function showAdminPage(name){
   if(name==='elections')  loadElections();
   if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); }
   if(name==='books')      loadBooks();
+  if(name==='broadcast')  loadBroadcasts();
   if(name==='messages')   loadMessages();
   if(name==='paul')       loadPaul();
   if(name==='admins')     loadAdmins();
@@ -415,6 +445,45 @@ async function adminDeleteUser(userId, email){
   } catch(e){
     alert('Could not delete: ' + e.message);
   }
+}
+
+async function sendBroadcast(){
+  const text = document.getElementById('bc-text').value.trim();
+  const icon = document.getElementById('bc-icon').value.trim() || '📢';
+  const status = document.getElementById('bc-status');
+  if(!text){ status.textContent = 'Enter a message first.'; return; }
+  if(!confirm('Send this announcement to ALL users (bell + push)?')) return;
+  const { data: { session } } = await _sb.auth.getSession();
+  if(!session?.access_token){ alert('Not signed in.'); return; }
+  status.textContent = 'Sending…';
+  try {
+    const r = await fetch(_SERVER_URL + '/admin/broadcast', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      body: JSON.stringify({ text, icon })
+    });
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || ('status '+r.status));
+    status.textContent = 'Sent to ' + j.recipients + ' user(s).';
+    document.getElementById('bc-text').value = '';
+    loadBroadcasts();
+  } catch(e){
+    status.textContent = '';
+    alert('Could not send: ' + e.message);
+  }
+}
+
+async function loadBroadcasts(){
+  const tbody = document.querySelector('#broadcasts-table tbody');
+  const { data, error } = await _sb.from('prep_broadcasts').select('*').order('created_at', { ascending:false }).limit(50);
+  if(error){ tbody.innerHTML = '<tr><td colspan="4">'+esc(error.message)+'</td></tr>'; return; }
+  if(!data || !data.length){ tbody.innerHTML = '<tr><td colspan="4" style="color:#999">No broadcasts yet.</td></tr>'; return; }
+  tbody.innerHTML = data.map(b => `<tr>
+    <td>${new Date(b.created_at).toLocaleString()}</td>
+    <td style="text-align:center">${esc(b.icon||'')}</td>
+    <td>${esc(b.text)}</td>
+    <td>${b.recipient_count ?? '—'}</td>
+  </tr>`).join('');
 }
 
 async function resetJourney(){

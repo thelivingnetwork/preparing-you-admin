@@ -227,7 +227,8 @@
 
     <div id="page-messages" class="admin-page" style="display:none">
       <h1>Messages <span class="panel-meta" id="messages-count"></span></h1>
-      <p style="color:#888;font-size:13px;margin:-6px 0 14px">Private messages are encrypted. Bodies are hidden here; use <b>Reveal</b> only for safeguarding — each reveal is logged.</p>
+      <p style="color:#888;font-size:13px;margin:-6px 0 10px">Private messages are encrypted. Bodies are hidden here; use <b>Reveal</b> only for safeguarding — each reveal is logged.</p>
+      <p style="margin:0 0 14px"><button class="btn-link" onclick="adminMigrateEncrypt()">Encrypt existing messages</button> <span id="migrate-status" style="color:#888;font-size:13px"></span></p>
       <div class="panel"><table id="messages-table"><thead><tr><th>When</th><th>From</th><th>To</th><th>Message</th></tr></thead><tbody></tbody></table></div>
     </div>
 
@@ -840,6 +841,28 @@ async function loadMessages(){
       </td>
     </tr>`;
   }).join('');
+}
+
+// One-time: encrypt any pre-existing plaintext message bodies. Idempotent —
+// safe to click more than once (already-encrypted rows are skipped).
+async function adminMigrateEncrypt(){
+  if(!confirm('Encrypt all existing message bodies now? Safe to run more than once.')) return;
+  const { data: { session } } = await _sb.auth.getSession();
+  if(!session?.access_token){ alert('Not signed in.'); return; }
+  const st = document.getElementById('migrate-status');
+  if(st) st.textContent = 'Encrypting…';
+  try {
+    const r = await fetch(_SERVER_URL + '/admin/migrate-encrypt-messages', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token }
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error || ('error '+r.status));
+    if(st) st.textContent = `Done — ${j.migrated} of ${j.scanned} encrypted.`;
+    loadMessages();
+  } catch(e){
+    if(st) st.textContent = 'Failed: ' + (e.message||e);
+  }
 }
 
 async function adminReveal(id){

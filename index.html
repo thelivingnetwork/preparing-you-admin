@@ -230,12 +230,23 @@
     <div id="page-broadcast" class="admin-page" style="display:none">
       <h1>Broadcast</h1>
       <div class="panel">
-        <div class="panel-head"><h2>Announce to all users</h2></div>
+        <div class="panel-head"><h2>Message users</h2></div>
         <p style="font-size:13px;color:#555;line-height:1.6;margin:6px 0 12px">
-          Sends a one-way notification to <strong>every user</strong> — it appears in their
+          Sends a one-way notification to the <strong>selected users</strong> — it appears in their
           notification bell and as a push notification (even when the app is closed).
-          This is one-way; if a user needs help they contact their PCM, not here.
+          Use <strong>Select all</strong> to reach everyone. This is one-way; if a user needs
+          help they contact their PCM, not here.
         </p>
+        <div style="margin:0 0 12px">
+          <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Recipients <span id="bc-rcount" style="color:#999"></span></label>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input id="bc-all" type="checkbox" onclick="bcToggleAll(this.checked)"> Select all
+            </label>
+            <input id="bc-filter" type="text" placeholder="Filter by name or email…" oninput="bcFilterRecipients(this.value)" style="flex:1;max-width:280px">
+          </div>
+          <div id="bc-recipients" style="max-height:240px;overflow:auto;border:1px solid #e8dec3;border-radius:6px;padding:6px 10px"></div>
+        </div>
         <div class="input-row" style="display:flex;gap:10px;align-items:flex-start">
           <div style="flex:0 0 64px">
             <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Icon</label>
@@ -243,10 +254,10 @@
           </div>
           <div style="flex:1">
             <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Message</label>
-            <textarea id="bc-text" rows="3" placeholder="Your announcement to all users…"></textarea>
+            <textarea id="bc-text" rows="3" placeholder="Your message to the selected users…"></textarea>
           </div>
         </div>
-        <button class="btn btn-sm btn-terra" style="margin-top:12px" onclick="sendBroadcast()">Send to all users</button>
+        <button class="btn btn-sm btn-terra" style="margin-top:12px" onclick="sendBroadcast()">Send to selected</button>
         <span id="bc-status" style="margin-left:12px;font-size:13px;color:#555"></span>
       </div>
       <div class="panel">
@@ -382,7 +393,7 @@ function showAdminPage(name){
   if(name==='elections')  loadElections();
   if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); }
   if(name==='books')      loadBooks();
-  if(name==='broadcast')  loadBroadcasts();
+  if(name==='broadcast'){ loadBroadcastRecipients(); loadBroadcasts(); }
   if(name==='messages')   loadMessages();
   if(name==='paul')       loadPaul();
   if(name==='admins')     loadAdmins();
@@ -436,12 +447,55 @@ async function adminDeleteUser(userId, email){
   }
 }
 
+let _bcUsers = [];   // [{id,name,email}] loaded for the recipient picker
+
+async function loadBroadcastRecipients(){
+  const box = document.getElementById('bc-recipients');
+  const { data, error } = await _sb.from('prep_users').select('id,name,email').order('name');
+  if(error){ box.innerHTML = '<div style="color:#9c3030;font-size:13px">'+esc(error.message)+'</div>'; return; }
+  _bcUsers = data || [];
+  document.getElementById('bc-all').checked = false;
+  document.getElementById('bc-filter').value = '';
+  box.innerHTML = _bcUsers.map(u => `
+    <label class="bc-recip" style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="bc-pick" value="${esc(u.id)}" onchange="bcSyncAll()">
+      <span>${esc(u.name||'(no name)')} <span style="color:#999">${esc(u.email||'')}</span></span>
+    </label>`).join('') || '<div style="color:#999;font-size:13px">No users.</div>';
+  bcUpdateCount();
+}
+
+function bcToggleAll(on){
+  document.querySelectorAll('#bc-recipients .bc-pick').forEach(cb => {
+    if(cb.closest('.bc-recip').style.display !== 'none') cb.checked = on;
+  });
+  bcUpdateCount();
+}
+function bcSyncAll(){
+  const boxes = [...document.querySelectorAll('#bc-recipients .bc-pick')].filter(cb => cb.closest('.bc-recip').style.display !== 'none');
+  document.getElementById('bc-all').checked = boxes.length>0 && boxes.every(cb => cb.checked);
+  bcUpdateCount();
+}
+function bcFilterRecipients(q){
+  q = (q||'').trim().toLowerCase();
+  document.querySelectorAll('#bc-recipients .bc-recip').forEach(row => {
+    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? 'flex' : 'none';
+  });
+  bcSyncAll();
+}
+function bcUpdateCount(){
+  const n = document.querySelectorAll('#bc-recipients .bc-pick:checked').length;
+  document.getElementById('bc-rcount').textContent = n ? '· '+n+' selected' : '';
+}
+
 async function sendBroadcast(){
   const text = document.getElementById('bc-text').value.trim();
   const icon = document.getElementById('bc-icon').value.trim() || '📢';
   const status = document.getElementById('bc-status');
+  const userIds = [...document.querySelectorAll('#bc-recipients .bc-pick:checked')].map(cb => cb.value);
+  if(!userIds.length){ status.textContent = 'Select at least one recipient.'; return; }
   if(!text){ status.textContent = 'Enter a message first.'; return; }
-  if(!confirm('Send this announcement to ALL users (bell + push)?')) return;
+  const everyone = userIds.length === _bcUsers.length;
+  if(!confirm('Send this message to '+(everyone ? 'ALL '+userIds.length : userIds.length)+' user(s) (bell + push)?')) return;
   const { data: { session } } = await _sb.auth.getSession();
   if(!session?.access_token){ alert('Not signed in.'); return; }
   status.textContent = 'Sending…';
@@ -449,12 +503,13 @@ async function sendBroadcast(){
     const r = await fetch(_SERVER_URL + '/admin/broadcast', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + session.access_token },
-      body: JSON.stringify({ text, icon })
+      body: JSON.stringify({ text, icon, userIds })
     });
     const j = await r.json();
     if(!r.ok) throw new Error(j.error || ('status '+r.status));
     status.textContent = 'Sent to ' + j.recipients + ' user(s).';
     document.getElementById('bc-text').value = '';
+    loadBroadcastRecipients();
     loadBroadcasts();
   } catch(e){
     status.textContent = '';

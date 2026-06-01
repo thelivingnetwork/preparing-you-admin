@@ -234,6 +234,12 @@
           <button class="btn btn-sm btn-terra th-save-btn" id="sched-save-btn" onclick="saveSchedule()">Save rule</button>
         </div>
         <div id="sched-status" style="font-size:12px;color:var(--walnut-mid);margin-top:10px"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--walnut-mid)">Test the local-time email →</span>
+          <input type="email" id="sched-test-email" placeholder="recipient@email.com" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:200px">
+          <button class="btn btn-sm" onclick="sendTestAnnounce()">Send test announcement</button>
+          <span id="sched-test-status" style="font-size:12px;color:var(--walnut-mid)"></span>
+        </div>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Schedule</h2><button class="btn btn-sm btn-terra" onclick="newTownhall()">+ New</button></div>
@@ -829,6 +835,31 @@ async function saveSchedule(){
   } catch(e){
     alert('Could not save schedule: ' + e.message);
     btn.textContent = 'Save rule'; btn.disabled = false;
+  }
+}
+
+async function sendTestAnnounce(){
+  const { data: { session } } = await _sb.auth.getSession();
+  if(!session){ alert('Not signed in.'); return; }
+  const email = (document.getElementById('sched-test-email').value || '').trim();
+  if(!email){ alert('Enter a recipient email.'); return; }
+  const st = document.getElementById('sched-test-status');
+  st.textContent = 'Sending…'; st.style.color = 'var(--walnut-mid)';
+  try {
+    const r = await fetch(_SERVER_URL + '/townhall/announce-test', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok) throw new Error((j.emailError && (j.emailError.error||JSON.stringify(j.emailError))) || j.error || 'send failed');
+    const tzNote = j.storedTimezone ? ('stored zone ' + j.storedTimezone)
+      : (j.foundUser ? 'no stored zone for that user — fell back to host zone (they need to log in once)' : 'no such member — fell back to host zone');
+    st.style.color = 'var(--walnut)';
+    st.textContent = `Sent to ${j.to}. Email shows: "${j.localTime}" (${tzNote}).`;
+  } catch(e){
+    st.style.color = 'var(--danger)';
+    st.textContent = 'Failed: ' + e.message;
   }
 }
 

@@ -796,7 +796,7 @@ function _renderScheduleStatus(s){
   if(!s || !s.enabled){ el.textContent = 'Standing townhall is off — meetings are created manually below.'; return; }
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const t = String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0');
-  el.textContent = `On: every ${days[s.weekday]} at ${t} (${s.timezone}). The next meeting is auto-created about a week ahead and everyone is emailed in their own local time.`;
+  el.textContent = `On: every ${days[s.weekday]} at ${t} (${s.timezone}). Each meeting is auto-created about 4 days ahead and everyone is emailed in their own local time. (If the next one is further out than that, it'll appear here a few days before.)`;
 }
 
 async function saveSchedule(){

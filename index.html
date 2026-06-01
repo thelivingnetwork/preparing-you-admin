@@ -207,6 +207,35 @@
     <div id="page-townhalls" class="admin-page" style="display:none">
       <h1>Townhalls</h1>
       <div class="panel">
+        <div class="panel-head"><h2>Standing weekly townhall</h2><span class="panel-meta">Auto-creates the next meeting each week and emails everyone</span></div>
+        <div id="sched-body" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+            <input type="checkbox" id="sched-enabled" onchange="markScheduleDirty()" style="width:18px;height:18px"> Enabled
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Day
+            <select id="sched-weekday" onchange="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit">
+              <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+              <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option>
+              <option value="6" selected>Saturday</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Time
+            <input type="time" id="sched-time" value="12:00" onchange="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Timezone
+            <input type="text" id="sched-tz" placeholder="America/New_York" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:180px">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Title
+            <input type="text" id="sched-title" value="Weekly Townhall" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:160px">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Topic
+            <input type="text" id="sched-topic" value="Open discussion" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:160px">
+          </label>
+          <button class="btn btn-sm btn-terra th-save-btn" id="sched-save-btn" onclick="saveSchedule()">Save rule</button>
+        </div>
+        <div id="sched-status" style="font-size:12px;color:var(--walnut-mid);margin-top:10px"></div>
+      </div>
+      <div class="panel">
         <div class="panel-head"><h2>Schedule</h2><button class="btn btn-sm btn-terra" onclick="newTownhall()">+ New</button></div>
         <table id="townhalls-table"><thead><tr><th>When</th><th>Title</th><th>Topic</th><th>Daily Room</th><th>Recording URL</th><th>Actions</th></tr></thead><tbody></tbody></table>
       </div>
@@ -405,7 +434,7 @@ function showAdminPage(name){
   if(name==='users')      loadUsers();
   if(name==='pcms')       loadPcms();
   if(name==='elections')  loadElections();
-  if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); }
+  if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); loadSchedule(); }
   if(name==='books')      loadBooks();
   if(name==='broadcast'){ loadBroadcastRecipients(); loadBroadcasts(); }
   if(name==='messages')   loadMessages();
@@ -693,10 +722,13 @@ async function saveTownhall(id){
     }
   });
   if(!fields.scheduled_at){ alert('Pick a date and time.'); return; }
-  // Reschedule resets the reminder flag so the cron fires again at the new time
-  if(scheduleChanged){ fields.reminder_sent_at = null; }
+  // Reschedule resets the reminder + announcement flags so the crons fire
+  // again at the new time (members get a fresh "rescheduled" notice).
+  if(scheduleChanged){ fields.reminder_sent_at = null; fields.announced_at = null; }
   const { error } = await _sb.from('prep_townhalls').update(fields).eq('id', id);
-  if(error) alert(error.message); else loadTownhalls();
+  if(error){ alert(error.message); return; }
+  if(scheduleChanged) _fireAnnouncements();
+  loadTownhalls();
 }
 
 async function newTownhall(){
@@ -711,7 +743,93 @@ async function newTownhall(){
   if(!at){ alert('Could not parse date.'); return; }
   const title = prompt('Title:', 'Weekly Townhall') || 'Townhall';
   const { error } = await _sb.from('prep_townhalls').insert({ scheduled_at: at, title, topic: 'Open discussion', daily_room: 'preparing-you-townhall-' + Date.now().toString(36) });
-  if(error) alert(error.message); else loadTownhalls();
+  if(error){ alert(error.message); return; }
+  _fireAnnouncements();
+  loadTownhalls();
+}
+
+// Nudge the server to send the "new townhall set" email/bell immediately
+// rather than waiting for the 5-min announcement cron. Fire-and-forget.
+function _fireAnnouncements(){
+  fetch(_SERVER_URL + '/townhall/announcements/run', { method: 'POST' }).catch(()=>{});
+}
+
+// ═════════════════════════ Standing weekly schedule ═════════════════════════
+function markScheduleDirty(){
+  const btn = document.getElementById('sched-save-btn');
+  if(!btn) return;
+  btn.textContent = 'Save rule *';
+  btn.style.boxShadow = '0 0 0 3px rgba(196,103,58,.18)';
+}
+
+async function loadSchedule(){
+  const { data: { session } } = await _sb.auth.getSession();
+  if(!session) return;
+  try {
+    const r = await fetch(_SERVER_URL + '/townhall/schedule', {
+      headers: { 'Authorization': 'Bearer ' + session.access_token }
+    });
+    const j = await r.json();
+    const s = j.schedule;
+    if(!document.getElementById('sched-tz').value){
+      document.getElementById('sched-tz').value = (s && s.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+    }
+    if(s){
+      document.getElementById('sched-enabled').checked = !!s.enabled;
+      document.getElementById('sched-weekday').value = String(s.weekday);
+      document.getElementById('sched-time').value =
+        String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0');
+      document.getElementById('sched-tz').value = s.timezone || document.getElementById('sched-tz').value;
+      document.getElementById('sched-title').value = s.title || 'Weekly Townhall';
+      document.getElementById('sched-topic').value = s.topic || 'Open discussion';
+    }
+    const btn = document.getElementById('sched-save-btn');
+    btn.textContent = 'Save rule'; btn.style.boxShadow = '';
+    _renderScheduleStatus(s);
+  } catch(e){
+    document.getElementById('sched-status').textContent = 'Could not load schedule: ' + e.message;
+  }
+}
+
+function _renderScheduleStatus(s){
+  const el = document.getElementById('sched-status');
+  if(!s || !s.enabled){ el.textContent = 'Standing townhall is off — meetings are created manually below.'; return; }
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const t = String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0');
+  el.textContent = `On: every ${days[s.weekday]} at ${t} (${s.timezone}). The next meeting is auto-created about a week ahead and everyone is emailed in their own local time.`;
+}
+
+async function saveSchedule(){
+  const { data: { session } } = await _sb.auth.getSession();
+  if(!session){ alert('Not signed in.'); return; }
+  const [hh, mm] = (document.getElementById('sched-time').value || '12:00').split(':');
+  const body = {
+    enabled: document.getElementById('sched-enabled').checked,
+    weekday: parseInt(document.getElementById('sched-weekday').value, 10),
+    hour: parseInt(hh, 10),
+    minute: parseInt(mm, 10),
+    timezone: document.getElementById('sched-tz').value.trim() || 'America/New_York',
+    title: document.getElementById('sched-title').value.trim() || 'Weekly Townhall',
+    topic: document.getElementById('sched-topic').value.trim() || 'Open discussion'
+  };
+  const btn = document.getElementById('sched-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch(_SERVER_URL + '/townhall/schedule', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || 'save failed');
+    btn.textContent = 'Saved ✓'; btn.style.boxShadow = '';
+    _renderScheduleStatus(j.schedule);
+    setTimeout(()=>{ btn.textContent = 'Save rule'; btn.disabled = false; }, 1200);
+    loadTownhalls();
+  } catch(e){
+    alert('Could not save schedule: ' + e.message);
+    btn.textContent = 'Save rule'; btn.disabled = false;
+  }
 }
 
 // ═════════════════════════ Hosts ═════════════════════════

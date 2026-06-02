@@ -325,6 +325,21 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
 
+// Return a guaranteed-valid access token for server calls. getSession() reads
+// the stored session WITHOUT a network round-trip, so after the PWA has been
+// backgrounded past the ~1h token lifetime it can hand back an expired JWT —
+// which the server rejects as invalid_token. Force a refresh when the token is
+// missing or within 60s of expiry so admin actions don't fail spuriously.
+async function _freshToken(){
+  let { data: { session } } = await _sb.auth.getSession();
+  const now = Math.floor(Date.now() / 1000);
+  if(!session || !session.access_token || (session.expires_at && session.expires_at - now < 60)){
+    const { data, error } = await _sb.auth.refreshSession();
+    if(!error && data && data.session) session = data.session;
+  }
+  return session ? session.access_token || null : null;
+}
+
 let me = null;
 
 // ═════════════════════════ Auth ═════════════════════════
@@ -474,12 +489,12 @@ const _SERVER_URL = 'https://preparing-you-server.onrender.com';
 
 async function adminDeleteUser(userId, email){
   if(!confirm('Delete user ' + email + ' (auth account + all data)? This cannot be undone.')) return;
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session?.access_token){ alert('Not signed in.'); return; }
+  const token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   try {
     const r = await fetch(_SERVER_URL + '/admin/delete-user', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ userId })
     });
     const j = await r.json();
@@ -561,13 +576,13 @@ async function sendBroadcast(){
   if(!text){ status.textContent = 'Enter a message first.'; return; }
   const everyone = userIds.length === _bcUsers.length;
   if(!confirm('Send this message to '+(everyone ? 'ALL '+userIds.length : userIds.length)+' user(s) (bell + push)?')) return;
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session?.access_token){ alert('Not signed in.'); return; }
+  const token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   status.textContent = 'Sending…';
   try {
     const r = await fetch(_SERVER_URL + '/admin/broadcast', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ text, icon, userIds })
     });
     const j = await r.json();
@@ -763,11 +778,11 @@ function markScheduleDirty(){
 }
 
 async function loadSchedule(){
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session) return;
+  const token = await _freshToken();
+  if(!token) return;
   try {
     const r = await fetch(_SERVER_URL + '/townhall/schedule', {
-      headers: { 'Authorization': 'Bearer ' + session.access_token }
+      headers: { 'Authorization': 'Bearer ' + token }
     });
     const j = await r.json();
     const s = j.schedule;
@@ -800,8 +815,8 @@ function _renderScheduleStatus(s){
 }
 
 async function saveSchedule(){
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session){ alert('Not signed in.'); return; }
+  const token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   const [hh, mm] = (document.getElementById('sched-time').value || '12:00').split(':');
   const body = {
     enabled: document.getElementById('sched-enabled').checked,
@@ -817,7 +832,7 @@ async function saveSchedule(){
   try {
     const r = await fetch(_SERVER_URL + '/townhall/schedule', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const j = await r.json();
@@ -928,13 +943,13 @@ async function saveBook(id){
 // metadata (who/when, attachment name) — never the text. A specific message
 // can be revealed for safeguarding, and every reveal is logged.
 async function loadMessages(){
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session?.access_token){ return; }
+  const token = await _freshToken();
+  if(!token){ return; }
   let data = [];
   try {
     const r = await fetch(_SERVER_URL + '/admin/messages-meta', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token }
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token }
     });
     const j = await r.json().catch(()=>({}));
     if(r.ok) data = j.messages || [];
@@ -965,14 +980,14 @@ async function loadMessages(){
 // safe to click more than once (already-encrypted rows are skipped).
 async function adminMigrateEncrypt(){
   if(!confirm('Encrypt all existing message bodies now? Safe to run more than once.')) return;
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session?.access_token){ alert('Not signed in.'); return; }
+  const token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   const st = document.getElementById('migrate-status');
   if(st) st.textContent = 'Encrypting…';
   try {
     const r = await fetch(_SERVER_URL + '/admin/migrate-encrypt-messages', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token }
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token }
     });
     const j = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error || ('error '+r.status));
@@ -985,14 +1000,14 @@ async function adminMigrateEncrypt(){
 
 async function adminReveal(id){
   if(!confirm('Reveal this private message?\n\nThis is for safeguarding only and the access is logged.')) return;
-  const { data: { session } } = await _sb.auth.getSession();
-  if(!session?.access_token){ alert('Not signed in.'); return; }
+  const token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   const cell = document.getElementById('bcell-'+id);
   if(cell){ cell.textContent = 'Revealing…'; }
   try {
     const r = await fetch(_SERVER_URL + '/admin/decrypt-message', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token },
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
       body: JSON.stringify({ messageId: id })
     });
     const j = await r.json().catch(()=>({}));

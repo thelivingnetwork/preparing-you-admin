@@ -492,7 +492,7 @@ async function loadUsers(){
       <td>${fmt(u.created_at)}</td>
       <td>${u.gateway_v3_at ? '<span class="badge badge-accepted">✓ all 3</span>' : (u.gateway_v2_at ? '2/3' : (u.gateway_v1_at ? '1/3' : '—'))}</td>
       <td>${u.tln_invited_at ? '<span class="badge badge-accepted" title="Invited '+fmt(u.tln_invited_at)+'">✓ invited</span>' : '—'}</td>
-      <td><button class="btn-link" onclick="adminDeleteUser('${u.id}', \`${esc(u.email)}\`)">Delete</button></td>
+      <td><button class="btn-link" onclick="adminEditEmail('${u.id}', \`${esc(u.email)}\`)">Edit email</button> · <button class="btn-link" onclick="adminDeleteUser('${u.id}', \`${esc(u.email)}\`)">Delete</button></td>
     </tr>
   `).join('');
 }
@@ -528,6 +528,46 @@ async function adminDeleteUser(userId, email){
     location.reload();
   } catch(e){
     alert('Could not delete: ' + e.message);
+  }
+}
+
+// Change a member's LOGIN email (e.g. they lost access to their old account).
+// Updates auth.users.email + the prep_users mirror via the server. Their
+// PASSWORD is unchanged — they sign in with the new email + existing password.
+async function adminEditEmail(userId, currentEmail){
+  const next = prompt('New login email for ' + currentEmail + ':\n\n(Their password is NOT changed — they sign in with this new email and their existing password.)', currentEmail);
+  if(next === null) return;                       // cancelled
+  const email = next.trim().toLowerCase();
+  if(!email || email === (currentEmail||'').toLowerCase()){ return; }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ alert('That does not look like a valid email address.'); return; }
+  if(!confirm('Change login email\n\nfrom:  ' + currentEmail + '\nto:    ' + email + '\n\nPassword stays the same. Continue?')) return;
+  let token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
+  const doUpdate = (tok) => fetch(_SERVER_URL + '/admin/update-email', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + tok },
+    body: JSON.stringify({ userId, email })
+  });
+  try {
+    let r = await doUpdate(token);
+    if(r.status === 401){
+      token = await _forceRefreshToken();
+      if(token) r = await doUpdate(token);
+    }
+    if(r.status === 401){
+      alert('Your session has expired. Please sign out and sign in again, then retry.');
+      return;
+    }
+    const j = await r.json().catch(()=>({}));
+    if(r.status === 409 || j.error === 'email_in_use'){
+      alert('That email is already used by another account. Pick a different address.');
+      return;
+    }
+    if(!r.ok) throw new Error(j.error || ('status '+r.status));
+    alert('Login email updated to ' + email + '. Their password is unchanged.');
+    loadUsers();
+  } catch(e){
+    alert('Could not update email: ' + e.message);
   }
 }
 

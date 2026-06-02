@@ -333,11 +333,25 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 async function _freshToken(){
   let { data: { session } } = await _sb.auth.getSession();
   const now = Math.floor(Date.now() / 1000);
-  if(!session || !session.access_token || (session.expires_at && session.expires_at - now < 60)){
+  const stale = !session || !session.access_token || (session.expires_at && session.expires_at - now < 60);
+  if(stale){
+    // Force a network refresh. If it fails (refresh token rotated/expired —
+    // common after the PWA has been backgrounded, or with multiple admin tabs),
+    // DO NOT fall back to the old expired token: the server would reject it as
+    // invalid_token. Return null so callers can prompt a clean re-login.
     const { data, error } = await _sb.auth.refreshSession();
-    if(!error && data && data.session) session = data.session;
+    session = (!error && data && data.session) ? data.session : null;
   }
   return session ? session.access_token || null : null;
+}
+
+// Unconditionally mint a fresh access token via the refresh token. Used to
+// retry a server call that came back 401 even though the stored token looked
+// valid by its timestamp. Returns null if the session can't be refreshed.
+async function _forceRefreshToken(){
+  const { data, error } = await _sb.auth.refreshSession();
+  if(error || !data || !data.session) return null;
+  return data.session.access_token || null;
 }
 
 let me = null;
@@ -489,15 +503,27 @@ const _SERVER_URL = 'https://preparing-you-server.onrender.com';
 
 async function adminDeleteUser(userId, email){
   if(!confirm('Delete user ' + email + ' (auth account + all data)? This cannot be undone.')) return;
-  const token = await _freshToken();
+  let token = await _freshToken();
   if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
+  const doDelete = (tok) => fetch(_SERVER_URL + '/admin/delete-user', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + tok },
+    body: JSON.stringify({ userId })
+  });
   try {
-    const r = await fetch(_SERVER_URL + '/admin/delete-user', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ userId })
-    });
-    const j = await r.json();
+    let r = await doDelete(token);
+    // The stored token can be rejected even when it looked valid by its
+    // timestamp (e.g. signed out elsewhere, clock skew). Force one hard refresh
+    // and retry before giving up.
+    if(r.status === 401){
+      token = await _forceRefreshToken();
+      if(token) r = await doDelete(token);
+    }
+    if(r.status === 401){
+      alert('Your session has expired. Please sign out and sign in again, then retry the delete.');
+      return;
+    }
+    const j = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error || ('status '+r.status));
     location.reload();
   } catch(e){

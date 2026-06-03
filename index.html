@@ -271,10 +271,10 @@
       <div class="panel">
         <div class="panel-head"><h2>Message users</h2></div>
         <p style="font-size:13px;color:#555;line-height:1.6;margin:6px 0 12px">
-          Sends a one-way notification to the <strong>selected users</strong> — it appears in their
-          notification bell and as a push notification (even when the app is closed).
-          Use <strong>Select all</strong> to reach everyone. This is one-way; if a user needs
-          help they contact their PCM, not here.
+          Sends a one-way message from <strong>Preparing You</strong> to the <strong>selected users</strong> —
+          it lands in their <strong>Messages</strong> inbox (they can't reply), and also alerts them via the
+          notification bell and a push notification (even when the app is closed).
+          Use <strong>Select all</strong> to reach everyone. If a user needs help they contact their PCM, not here.
         </p>
         <div style="margin:0 0 12px">
           <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Recipients <span id="bc-rcount" style="color:#999"></span></label>
@@ -478,7 +478,7 @@ function userMap(rows){ const m=new Map(); for(const r of rows||[]) m.set(r.id, 
 
 // ═════════════════════════ Users ═════════════════════════
 async function loadUsers(){
-  const { data, error } = await _sb.from('prep_users').select('*').order('created_at',{ascending:false});
+  const { data, error } = await _sb.from('prep_users').select('*').eq('is_system', false).order('created_at',{ascending:false});
   if(error){ alert(error.message); return; }
   document.getElementById('users-count').textContent = '· ' + data.length;
   const um = userMap(data);
@@ -577,7 +577,7 @@ let _bcPcmIds = new Set(); // ids that are active PCMs / Volunteer PCMs
 async function loadBroadcastRecipients(){
   const box = document.getElementById('bc-recipients');
   const [{ data, error }, pcmRes] = await Promise.all([
-    _sb.from('prep_users').select('id,name,email').order('name'),
+    _sb.from('prep_users').select('id,name,email').eq('is_system', false).order('name'),
     _sb.from('prep_pcms').select('id').eq('active', true)
   ]);
   if(error){ box.innerHTML = '<div style="color:#9c3030;font-size:13px">'+esc(error.message)+'</div>'; return; }
@@ -641,7 +641,7 @@ async function sendBroadcast(){
   if(!userIds.length){ status.textContent = 'Select at least one recipient.'; return; }
   if(!text){ status.textContent = 'Enter a message first.'; return; }
   const everyone = userIds.length === _bcUsers.length;
-  if(!confirm('Send this message to '+(everyone ? 'ALL '+userIds.length : userIds.length)+' user(s) (bell + push)?')) return;
+  if(!confirm('Send this message to '+(everyone ? 'ALL '+userIds.length : userIds.length)+' user(s)? It appears in their Messages inbox (one-way), plus a bell + push alert.')) return;
   const token = await _freshToken();
   if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   status.textContent = 'Sending…';

@@ -191,7 +191,7 @@
   <main class="main">
     <div id="page-users" class="admin-page">
       <h1>Users <span class="panel-meta" id="users-count"></span></h1>
-      <div class="panel"><table id="users-table"><thead><tr><th>Name</th><th>Email</th><th>Region</th><th>PCM</th><th>Joined</th><th>Gateway</th><th>TLN</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      <div class="panel"><table id="users-table"><thead><tr><th>Name</th><th>Email</th><th>Region</th><th>PCM</th><th>Joined</th><th>Gateway</th><th>Books</th><th>TLN</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
     </div>
 
     <div id="page-pcms" class="admin-page" style="display:none">
@@ -482,6 +482,14 @@ async function loadUsers(){
   if(error){ alert(error.message); return; }
   document.getElementById('users-count').textContent = '· ' + data.length;
   const um = userMap(data);
+  // Five Books audio-overview progress (admins read every user's rows via RLS).
+  let _booksTotal = 5; const _bookDone = new Map();
+  try {
+    const { count: _bt } = await _sb.from('prep_books').select('id', { count:'exact', head:true });
+    if(_bt) _booksTotal = _bt;
+    const { data: _bp } = await _sb.from('prep_book_audio_progress').select('user_id');
+    for(const r of _bp||[]) _bookDone.set(r.user_id, (_bookDone.get(r.user_id)||0) + 1);
+  } catch(_){}
   const tb = document.querySelector('#users-table tbody');
   tb.innerHTML = data.map(u => `
     <tr>
@@ -491,6 +499,7 @@ async function loadUsers(){
       <td>${u.pcm_id ? esc(um.get(u.pcm_id)?.name || u.pcm_id.slice(0,8)) : '—'}</td>
       <td>${fmt(u.created_at)}</td>
       <td>${u.gateway_v3_at ? '<span class="badge badge-accepted">✓ all 3</span>' : (u.gateway_v2_at ? '2/3' : (u.gateway_v1_at ? '1/3' : '—'))}</td>
+      <td>${(()=>{ const d=_bookDone.get(u.id)||0; return d>=_booksTotal ? '<span class="badge badge-accepted">✓ all '+_booksTotal+'</span>' : (d>0 ? d+'/'+_booksTotal : '—'); })()}</td>
       <td>${u.tln_invited_at ? '<span class="badge badge-accepted" title="Invited '+fmt(u.tln_invited_at)+'">✓ invited</span>' : '—'}</td>
       <td><button class="btn-link" onclick="adminEditEmail('${u.id}', \`${esc(u.email)}\`)">Edit email</button> · <button class="btn-link" onclick="adminDeleteUser('${u.id}', \`${esc(u.email)}\`)">Delete</button></td>
     </tr>

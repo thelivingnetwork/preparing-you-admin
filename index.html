@@ -299,7 +299,11 @@
             <textarea id="bc-text" rows="3" placeholder="Your message to the selected users…"></textarea>
           </div>
         </div>
-        <button class="btn btn-sm btn-terra" style="margin-top:12px" onclick="sendBroadcast()">Send to selected</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:12px;cursor:pointer">
+          <input id="bc-email" type="checkbox"> Also send as email
+          <span style="color:#999;font-size:12px">(delivers the message to recipients' inboxes by email, in addition to the in-app message + push)</span>
+        </label>
+        <button class="btn btn-sm btn-terra" style="margin-top:10px" onclick="sendBroadcast()">Send to selected</button>
         <span id="bc-status" style="margin-left:12px;font-size:13px;color:#555"></span>
       </div>
       <div class="panel">
@@ -650,8 +654,10 @@ async function sendBroadcast(){
   const userIds = [...document.querySelectorAll('#bc-recipients .bc-pick:checked')].map(cb => cb.value);
   if(!userIds.length){ status.textContent = 'Select at least one recipient.'; return; }
   if(!text){ status.textContent = 'Enter a message first.'; return; }
+  const alsoEmail = document.getElementById('bc-email').checked;
   const everyone = userIds.length === _bcUsers.length;
-  if(!confirm('Send this message to '+(everyone ? 'ALL '+userIds.length : userIds.length)+' user(s)? It appears in their Messages inbox (one-way), plus a bell + push alert.')) return;
+  const emailNote = alsoEmail ? ' It will ALSO be emailed to each recipient.' : '';
+  if(!confirm('Send this message to '+(everyone ? 'ALL '+userIds.length : userIds.length)+' user(s)? It appears in their Messages inbox (one-way), plus a bell + push alert.'+emailNote)) return;
   const token = await _freshToken();
   if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
   status.textContent = 'Sending…';
@@ -659,11 +665,11 @@ async function sendBroadcast(){
     const r = await fetch(_SERVER_URL + '/admin/broadcast', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ text, icon, userIds })
+      body: JSON.stringify({ text, icon, userIds, email: alsoEmail })
     });
     const j = await r.json();
     if(!r.ok) throw new Error(j.error || ('status '+r.status));
-    status.textContent = 'Sent to ' + j.recipients + ' user(s).';
+    status.textContent = 'Sent to ' + j.recipients + ' user(s)' + (j.emailQueued ? ' — emails are sending now.' : '.');
     document.getElementById('bc-text').value = '';
     loadBroadcastRecipients();
     loadBroadcasts();

@@ -264,10 +264,8 @@
 
     <div id="page-paul" class="admin-page" style="display:none">
       <h1>Paul Chat Logs <span class="panel-meta" id="paul-count"></span></h1>
-      <p style="color:#888;font-size:13px;margin:-6px 0 10px">Paul conversations are <b>encrypted at rest</b>. This view shows metadata only — when, which member, and role. To read a member's actual words you must <b>break the glass</b>: it requires a reason and is recorded in the audit log.</p>
-      <p style="margin:0 0 14px"><button class="btn-link" onclick="adminMigrateEncryptPaul()">Encrypt existing Paul chats</button> <span id="paul-migrate-status" style="color:#888;font-size:13px"></span></p>
-      <div class="panel"><table id="paul-table"><thead><tr><th>When</th><th>User</th><th>Role</th><th>Message</th><th></th></tr></thead><tbody></tbody></table></div>
-      <div id="paul-reveal" style="display:none;margin-top:16px"></div>
+      <p style="color:#888;font-size:13px;margin:-6px 0 10px">Paul conversations are <b>not stored</b> — the server keeps only metadata (when, which member, role) for usage limits, never the message text. There is nothing to reveal.</p>
+      <div class="panel"><table id="paul-table"><thead><tr><th>When</th><th>User</th><th>Role</th></tr></thead><tbody></tbody></table></div>
     </div>
 
     <div id="page-broadcast" class="admin-page" style="display:none">
@@ -1089,74 +1087,25 @@ async function adminMigrateEncrypt(){
 // ═════════════════════════ Paul logs ═════════════════════════
 let _paulUsers = {};
 async function loadPaul(){
-  // Metadata only — message bodies are encrypted at rest and never rendered here.
+  // Metadata only — Paul message bodies are not stored at all (server keeps role + timestamp for usage limits).
   const { data } = await _sb.from('prep_paul_chats').select('id, user_id, role, created_at').order('created_at',{ascending:false}).limit(200);
   const ids = [...new Set((data||[]).map(m=>m.user_id))];
   const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   _paulUsers = {};
   (us||[]).forEach(u => { _paulUsers[u.id] = u.name || u.email || (u.id||'').slice(0,8); });
   document.getElementById('paul-count').textContent = '· ' + (data||[]).length;
-  document.getElementById('paul-reveal').style.display = 'none';
   const tb = document.querySelector('#paul-table tbody');
   tb.innerHTML = (data||[]).map(m => `
     <tr>
       <td style="white-space:nowrap">${fmt(m.created_at)}</td>
       <td>${esc(_paulUsers[m.user_id] || '—')}</td>
       <td>${esc(m.role)}</td>
-      <td style="color:#999">🔒 encrypted</td>
-      <td><button class="btn-link" onclick="revealPaul('${esc(m.user_id)}')">Reveal</button></td>
     </tr>
   `).join('');
 }
-// Break glass: decrypt one member's Paul conversation via the server (which holds
-// the key). Requires a reason; the server records the access in prep_admin_audit.
-async function revealPaul(userId){
-  const name = _paulUsers[userId] || 'this member';
-  const reason = prompt('Break glass — reveal '+name+"'s Paul conversation?\n\nThis decrypts their messages and is recorded in the audit log. Enter a reason:");
-  if(reason === null) return;
-  if(!reason.trim()){ alert('A reason is required to reveal.'); return; }
-  const panel = document.getElementById('paul-reveal');
-  panel.style.display = 'block';
-  panel.innerHTML = '<p style="color:#888">Revealing…</p>';
-  try {
-    const token = await _freshToken();
-    const r = await fetch(_SERVER_URL + '/admin/paul-chats/reveal', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
-      body: JSON.stringify({ user_id: userId, reason: reason.trim() })
-    });
-    const j = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error || ('error '+r.status));
-    const rows = j.chats || [];
-    panel.innerHTML = '<h3 style="margin:0 0 6px">Conversation — '+esc(name)+' '
-      + '<button class="btn-link" style="font-size:12px" onclick="document.getElementById(\'paul-reveal\').style.display=\'none\'">close</button></h3>'
-      + '<p style="color:#9c3030;font-size:12px;margin:0 0 12px">⚠ Revealed via break glass — this access has been logged.</p>'
-      + (rows.length ? rows.map(c =>
-          '<div style="margin:0 0 12px;padding:8px 10px;background:#faf8f3;border-radius:6px">'
-          + '<div style="font-size:11px;color:#999;margin-bottom:3px">'+fmt(c.created_at)+' · '+esc(c.role)+'</div>'
-          + '<div style="white-space:pre-wrap">'+esc(c.message)+'</div></div>'
-        ).join('') : '<p style="color:#888">No messages.</p>');
-  } catch(e){
-    panel.innerHTML = '<p style="color:#9c3030">Failed: '+esc(e.message||String(e))+'</p>';
-  }
-}
-async function adminMigrateEncryptPaul(){
-  const st = document.getElementById('paul-migrate-status');
-  if(st) st.textContent = 'Encrypting…';
-  try {
-    const token = await _freshToken();
-    const r = await fetch(_SERVER_URL + '/admin/migrate-encrypt-paul-chats', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token }
-    });
-    const j = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error || ('error '+r.status));
-    if(st) st.textContent = `Done — ${j.migrated} of ${j.scanned} encrypted.`;
-    loadPaul();
-  } catch(e){
-    if(st) st.textContent = 'Failed: ' + (e.message||e);
-  }
-}
+// revealPaul / adminMigrateEncryptPaul removed 2026-06-25: Paul history is no longer stored
+// (the server keeps only role + timestamp), so there is nothing to break-glass reveal or to
+// migrate-encrypt. The matching server endpoints were removed too.
 
 // ═════════════════════════ Admins ═════════════════════════
 async function loadAdmins(){

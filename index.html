@@ -177,7 +177,6 @@
       <button class="sidebar-btn"        data-page="pcms"      onclick="showAdminPage('pcms')">PCMs</button>
       <button class="sidebar-btn"        data-page="elections" onclick="showAdminPage('elections')">Elections</button>
       <button class="sidebar-btn"        data-page="townhalls" onclick="showAdminPage('townhalls')">Townhalls</button>
-      <button class="sidebar-btn"        data-page="books"     onclick="showAdminPage('books')">Books</button>
       <button class="sidebar-btn"        data-page="broadcast" onclick="showAdminPage('broadcast')">Broadcast</button>
       <button class="sidebar-btn"        data-page="messages"  onclick="showAdminPage('messages')">Messages</button>
       <button class="sidebar-btn"        data-page="paul"      onclick="showAdminPage('paul')">Paul Logs</button>
@@ -250,10 +249,9 @@
       </div>
     </div>
 
-    <div id="page-books" class="admin-page" style="display:none">
-      <h1>Books</h1>
-      <div class="panel"><table id="books-table"><thead><tr><th>Order</th><th>Title</th><th>Slug</th><th>Description</th><th>Audio Overview</th><th>PDF Path</th><th></th></tr></thead><tbody></tbody></table></div>
-    </div>
+    <!-- Books page removed 2026-07-09: the Five Books are a fixed canon and the
+         live-editing metadata grid was a setup-era tool with accident risk.
+         prep_books edits (if ever needed) go via the Supabase table editor. -->
 
     <div id="page-messages" class="admin-page" style="display:none">
       <h1>Messages <span class="panel-meta" id="messages-count"></span></h1>
@@ -470,7 +468,6 @@ function showAdminPage(name){
   if(name==='pcms')       loadPcms();
   if(name==='elections')  loadElections();
   if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); loadSchedule(); }
-  if(name==='books')      loadBooks();
   if(name==='broadcast'){ loadBroadcastRecipients(); loadBroadcasts(); }
   if(name==='messages')   loadMessages();
   if(name==='paul')       loadPaul();
@@ -996,30 +993,8 @@ async function removeHost(uid){
   if(error) alert(error.message); else loadHosts();
 }
 
-// ═════════════════════════ Books ═════════════════════════
-async function loadBooks(){
-  const { data } = await _sb.from('prep_books').select('*').order('order_index');
-  const tb = document.querySelector('#books-table tbody');
-  tb.innerHTML = (data||[]).map(b => `
-    <tr>
-      <td><input class="bk-edit" data-id="${b.id}" data-col="order_index" type="number" value="${b.order_index||0}" style="width:60px;border:1px solid var(--line);padding:4px;border-radius:4px"></td>
-      <td><input class="bk-edit" data-id="${b.id}" data-col="title" value="${esc(b.title)}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><span style="font-size:11px;color:var(--walnut-mid)">${esc(b.slug)}</span></td>
-      <td><input class="bk-edit" data-id="${b.id}" data-col="description" value="${esc(b.description||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><input class="bk-edit" data-id="${b.id}" data-col="audio_overview_path" value="${esc(b.audio_overview_path||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><input class="bk-edit" data-id="${b.id}" data-col="pdf_storage_path" value="${esc(b.pdf_storage_path||'')}" style="width:100%;border:1px solid var(--line);padding:4px 6px;border-radius:4px"></td>
-      <td><button class="btn-link" onclick="saveBook(${b.id})">Save</button></td>
-    </tr>
-  `).join('');
-}
-async function saveBook(id){
-  const fields = {};
-  document.querySelectorAll('.bk-edit[data-id="'+id+'"]').forEach(i => {
-    fields[i.dataset.col] = i.type === 'number' ? parseInt(i.value, 10) || 0 : i.value;
-  });
-  const { error } = await _sb.from('prep_books').update(fields).eq('id', id);
-  if(error) alert(error.message); else loadBooks();
-}
+// (Books metadata editor removed 2026-07-09 — fixed canon; edit prep_books
+//  via the Supabase table editor on the rare occasion it's needed.)
 
 // ═════════════════════════ Messages monitor ═════════════════════════
 // Private messages are end-to-end encrypted at rest. This page shows only

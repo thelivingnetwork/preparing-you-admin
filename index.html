@@ -484,7 +484,7 @@ function userMap(rows){ const m=new Map(); for(const r of rows||[]) m.set(r.id, 
 
 // ═════════════════════════ Users ═════════════════════════
 async function loadUsers(){
-  const { data, error } = await _sb.from('prep_users').select('*').eq('is_system', false).order('created_at',{ascending:false});
+  const { data, error } = await _sb.from('prep_users_admin').select('*').eq('is_system', false).order('created_at',{ascending:false});
   if(error){ alert(error.message); return; }
   document.getElementById('users-count').textContent = '· ' + data.length;
   const um = userMap(data);
@@ -592,7 +592,7 @@ let _bcPcmIds = new Set(); // ids that are active PCMs / Volunteer PCMs
 async function loadBroadcastRecipients(){
   const box = document.getElementById('bc-recipients');
   const [{ data, error }, pcmRes] = await Promise.all([
-    _sb.from('prep_users').select('id,name,email').eq('is_system', false).order('name'),
+    _sb.from('prep_users_admin').select('id,name,email').eq('is_system', false).order('name'),
     _sb.from('prep_pcms').select('id').eq('active', true)
   ]);
   if(error){ box.innerHTML = '<div style="color:#9c3030;font-size:13px">'+esc(error.message)+'</div>'; return; }
@@ -701,7 +701,7 @@ async function confirmDelete(table, id, label, name){
 
 // ═════════════════════════ PCMs ═════════════════════════
 async function loadPcms(){
-  const { data } = await _sb.from('prep_pcms').select('*').order('name');
+  const { data } = await _sb.from('prep_pcms_admin').select('*').order('name');
   document.getElementById('pcms-count').textContent = '· ' + (data||[]).length;
   const tb = document.querySelector('#pcms-table tbody');
   tb.innerHTML = (data||[]).map(p => `
@@ -727,7 +727,7 @@ async function togglePcmActive(id, active){
 async function loadElections(){
   const { data: el } = await _sb.from('prep_pcm_elections').select('*').order('elected_at',{ascending:false}).limit(200);
   const ids = [...new Set([...(el||[]).map(e=>e.elector_id), ...(el||[]).map(e=>e.pcm_id)])];
-  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const { data: us } = await _sb.from('prep_users_admin').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   const um = userMap(us||[]);
   document.getElementById('elections-count').textContent = '· ' + (el||[]).length;
   const tb = document.querySelector('#elections-table tbody');
@@ -970,7 +970,7 @@ async function loadTownhallLog(){
 async function loadHosts(){
   const { data: hosts } = await _sb.from('prep_townhall_hosts').select('user_id, added_at');
   const ids = (hosts||[]).map(h=>h.user_id);
-  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const { data: us } = await _sb.from('prep_users_admin').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   const um = userMap(us||[]);
   const tb = document.querySelector('#hosts-table tbody');
   tb.innerHTML = (hosts||[]).map(h => `
@@ -985,7 +985,7 @@ async function loadHosts(){
 async function newHost(){
   const email = prompt('Email of user to make a townhall host:');
   if(!email) return;
-  const { data: u } = await _sb.from('prep_users').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
+  const { data: u } = await _sb.from('prep_users_admin').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
   if(!u){ alert('No user with that email.'); return; }
   const { error } = await _sb.from('prep_townhall_hosts').insert({ user_id: u.id });
   if(error) alert(error.message); else loadHosts();
@@ -1039,7 +1039,7 @@ async function loadMessages(){
     else { document.querySelector('#messages-table tbody').innerHTML = '<tr><td colspan="4">'+esc(j.error||('error '+r.status))+'</td></tr>'; return; }
   } catch(e){ document.querySelector('#messages-table tbody').innerHTML = '<tr><td colspan="4">'+esc(e.message||e)+'</td></tr>'; return; }
   const ids = [...new Set([...data.map(m=>m.sender_id), ...data.map(m=>m.recipient_id)])];
-  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const { data: us } = await _sb.from('prep_users_admin').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   const um = userMap(us||[]);
   document.getElementById('messages-count').textContent = '· ' + data.length;
   const tb = document.querySelector('#messages-table tbody');
@@ -1090,7 +1090,7 @@ async function loadPaul(){
   // Metadata only — Paul message bodies are not stored at all (server keeps role + timestamp for usage limits).
   const { data } = await _sb.from('prep_paul_chats').select('id, user_id, role, created_at').order('created_at',{ascending:false}).limit(200);
   const ids = [...new Set((data||[]).map(m=>m.user_id))];
-  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const { data: us } = await _sb.from('prep_users_admin').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   _paulUsers = {};
   (us||[]).forEach(u => { _paulUsers[u.id] = u.name || u.email || (u.id||'').slice(0,8); });
   document.getElementById('paul-count').textContent = '· ' + (data||[]).length;
@@ -1111,7 +1111,7 @@ async function loadPaul(){
 async function loadAdmins(){
   const { data: admins } = await _sb.from('prep_admins').select('user_id, added_at');
   const ids = (admins||[]).map(a=>a.user_id);
-  const { data: us } = await _sb.from('prep_users').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+  const { data: us } = await _sb.from('prep_users_admin').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   const um = userMap(us||[]);
   const tb = document.querySelector('#admins-table tbody');
   tb.innerHTML = (admins||[]).map(a => `
@@ -1126,7 +1126,7 @@ async function loadAdmins(){
 async function newAdmin(){
   const email = prompt('Email of user to grant admin access:');
   if(!email) return;
-  const { data: u } = await _sb.from('prep_users').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
+  const { data: u } = await _sb.from('prep_users_admin').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
   if(!u){ alert('No user with that email exists in prep_users.'); return; }
   const { error } = await _sb.from('prep_admins').insert({ user_id: u.id });
   if(error) alert(error.message); else loadAdmins();

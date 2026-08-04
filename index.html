@@ -397,7 +397,7 @@ async function adminSignIn(){
   const err   = document.getElementById('gate-err');
   err.style.display = 'none';
   const { data, error } = await _sb.auth.signInWithPassword({ email, password: pass });
-  if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
+  if(error){ err.textContent = errMsg(error); err.style.display = 'block'; return; }
   await onSignedIn(data.user);
 }
 
@@ -410,7 +410,7 @@ async function sendForgot(){
   const { error } = await _sb.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin + '/?reset=1'
   });
-  if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
+  if(error){ err.textContent = errMsg(error); err.style.display = 'block'; return; }
   ok.textContent = 'Check your email for a reset link.';
   ok.style.display = 'block';
 }
@@ -421,7 +421,7 @@ async function doReset(){
   err.style.display = 'none';
   if(!pw || pw.length < 8){ err.textContent = 'Password must be at least 8 characters.'; err.style.display = 'block'; return; }
   const { error } = await _sb.auth.updateUser({ password: pw });
-  if(error){ err.textContent = error.message; err.style.display = 'block'; return; }
+  if(error){ err.textContent = errMsg(error); err.style.display = 'block'; return; }
   history.replaceState({}, '', window.location.pathname);
   const { data: { session } } = await _sb.auth.getSession();
   if(session?.user){ await onSignedIn(session.user); }
@@ -479,10 +479,28 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function fmt(t){ if(!t) return '—'; const d=new Date(t); return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
 function userMap(rows){ const m=new Map(); for(const r of rows||[]) m.set(r.id, r); return m; }
 
+// An expired login surfaces as a raw Postgres error, not an auth error: once the
+// JWT lapses PostgREST falls back to the `anon` role, and the admin views grant
+// SELECT to `authenticated` only — so you get "permission denied for view
+// prep_users_admin". That reads like a broken deployment when it is simply a
+// stale session (2026-08-04: cost a round of schema forensics to establish).
+//
+// Note a signed-in NON-admin never lands here: the views' WHERE clause returns
+// zero rows rather than erroring. So permission-denied on these views means
+// unauthenticated, essentially always. The raw text is kept in parentheses so a
+// genuine misconfiguration is still diagnosable.
+function errMsg(e){
+  const m = (e && (e.message || e.msg)) || String(e || 'Unknown error');
+  if (/permission denied for (view|table)/i.test(m) || /\bJWT\b|jwt expired|invalid token/i.test(m)) {
+    return 'Your session has expired — sign out and sign in again. (' + m + ')';
+  }
+  return m;
+}
+
 // ═════════════════════════ Users ═════════════════════════
 async function loadUsers(){
   const { data, error } = await _sb.from('prep_users_admin').select('*').eq('is_system', false).order('created_at',{ascending:false});
-  if(error){ alert(error.message); return; }
+  if(error){ alert(errMsg(error)); return; }
   document.getElementById('users-count').textContent = '· ' + data.length;
   const um = userMap(data);
   // Five Books audio-overview progress (admins read every user's rows via RLS).
@@ -539,7 +557,7 @@ async function adminDeleteUser(userId, email){
     if(!r.ok) throw new Error(j.error || ('status '+r.status));
     location.reload();
   } catch(e){
-    alert('Could not delete: ' + e.message);
+    alert('Could not delete: ' + errMsg(e));
   }
 }
 
@@ -579,7 +597,7 @@ async function adminEditEmail(userId, currentEmail){
     alert('Login email updated to ' + email + '. Their password is unchanged.');
     loadUsers();
   } catch(e){
-    alert('Could not update email: ' + e.message);
+    alert('Could not update email: ' + errMsg(e));
   }
 }
 
@@ -592,7 +610,7 @@ async function loadBroadcastRecipients(){
     _sb.from('prep_users_admin').select('id,name,email').eq('is_system', false).order('name'),
     _sb.from('prep_pcms').select('id').eq('active', true)
   ]);
-  if(error){ box.innerHTML = '<div style="color:#9c3030;font-size:13px">'+esc(error.message)+'</div>'; return; }
+  if(error){ box.innerHTML = '<div style="color:#9c3030;font-size:13px">'+esc(errMsg(error))+'</div>'; return; }
   _bcUsers = data || [];
   _bcPcmIds = new Set((pcmRes.data || []).map(p => p.id));
   document.getElementById('bc-all').checked = false;
@@ -673,14 +691,14 @@ async function sendBroadcast(){
     loadBroadcasts();
   } catch(e){
     status.textContent = '';
-    alert('Could not send: ' + e.message);
+    alert('Could not send: ' + errMsg(e));
   }
 }
 
 async function loadBroadcasts(){
   const tbody = document.querySelector('#broadcasts-table tbody');
   const { data, error } = await _sb.from('prep_broadcasts').select('*').order('created_at', { ascending:false }).limit(50);
-  if(error){ tbody.innerHTML = '<tr><td colspan="4">'+esc(error.message)+'</td></tr>'; return; }
+  if(error){ tbody.innerHTML = '<tr><td colspan="4">'+esc(errMsg(error))+'</td></tr>'; return; }
   if(!data || !data.length){ tbody.innerHTML = '<tr><td colspan="4" style="color:#999">No broadcasts yet.</td></tr>'; return; }
   tbody.innerHTML = data.map(b => `<tr>
     <td>${new Date(b.created_at).toLocaleString()}</td>
@@ -693,7 +711,7 @@ async function loadBroadcasts(){
 async function confirmDelete(table, id, label, name){
   if(!confirm('Delete this '+label+': '+name+'? This cannot be undone.')) return;
   const { error } = await _sb.from(table).delete().eq('id', id);
-  if(error) alert(error.message); else location.reload();
+  if(error) alert(errMsg(error)); else location.reload();
 }
 
 // ═════════════════════════ PCMs ═════════════════════════
@@ -717,7 +735,7 @@ async function loadPcms(){
 }
 async function togglePcmActive(id, active){
   const { error } = await _sb.from('prep_pcms').update({ active }).eq('id', id);
-  if(error) alert(error.message); else loadPcms();
+  if(error) alert(errMsg(error)); else loadPcms();
 }
 
 // ═════════════════════════ Elections ═════════════════════════
@@ -821,7 +839,7 @@ async function saveTownhall(id){
   // again at the new time (members get a fresh "rescheduled" notice).
   if(scheduleChanged){ fields.reminder_sent_at = null; fields.announced_at = null; }
   const { error } = await _sb.from('prep_townhalls').update(fields).eq('id', id);
-  if(error){ alert(error.message); return; }
+  if(error){ alert(errMsg(error)); return; }
   if(scheduleChanged) _fireAnnouncements();
   loadTownhalls();
 }
@@ -838,7 +856,7 @@ async function newTownhall(){
   if(!at){ alert('Could not parse date.'); return; }
   const title = prompt('Title:', 'Weekly Townhall') || 'Townhall';
   const { error } = await _sb.from('prep_townhalls').insert({ scheduled_at: at, title, topic: 'Open discussion', daily_room: 'preparing-you-townhall-' + Date.now().toString(36) });
-  if(error){ alert(error.message); return; }
+  if(error){ alert(errMsg(error)); return; }
   _fireAnnouncements();
   loadTownhalls();
 }
@@ -882,7 +900,7 @@ async function loadSchedule(){
     btn.textContent = 'Save rule'; btn.style.boxShadow = '';
     _renderScheduleStatus(s);
   } catch(e){
-    document.getElementById('sched-status').textContent = 'Could not load schedule: ' + e.message;
+    document.getElementById('sched-status').textContent = 'Could not load schedule: ' + errMsg(e);
   }
 }
 
@@ -922,7 +940,7 @@ async function saveSchedule(){
     setTimeout(()=>{ btn.textContent = 'Save rule'; btn.disabled = false; }, 1200);
     loadTownhalls();
   } catch(e){
-    alert('Could not save schedule: ' + e.message);
+    alert('Could not save schedule: ' + errMsg(e));
     btn.textContent = 'Save rule'; btn.disabled = false;
   }
 }
@@ -985,12 +1003,12 @@ async function newHost(){
   const { data: u } = await _sb.from('prep_users_admin').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
   if(!u){ alert('No user with that email.'); return; }
   const { error } = await _sb.from('prep_townhall_hosts').insert({ user_id: u.id });
-  if(error) alert(error.message); else loadHosts();
+  if(error) alert(errMsg(error)); else loadHosts();
 }
 async function removeHost(uid){
   if(!confirm('Remove this townhall host?')) return;
   const { error } = await _sb.from('prep_townhall_hosts').delete().eq('user_id', uid);
-  if(error) alert(error.message); else loadHosts();
+  if(error) alert(errMsg(error)); else loadHosts();
 }
 
 // (Books metadata editor removed 2026-07-09 — fixed canon; edit prep_books
@@ -1012,7 +1030,7 @@ async function loadMessages(){
     const j = await r.json().catch(()=>({}));
     if(r.ok) data = j.messages || [];
     else { document.querySelector('#messages-table tbody').innerHTML = '<tr><td colspan="4">'+esc(j.error||('error '+r.status))+'</td></tr>'; return; }
-  } catch(e){ document.querySelector('#messages-table tbody').innerHTML = '<tr><td colspan="4">'+esc(e.message||e)+'</td></tr>'; return; }
+  } catch(e){ document.querySelector('#messages-table tbody').innerHTML = '<tr><td colspan="4">'+esc(errMsg(e))+'</td></tr>'; return; }
   const ids = [...new Set([...data.map(m=>m.sender_id), ...data.map(m=>m.recipient_id)])];
   const { data: us } = await _sb.from('prep_users_admin').select('id, name, email').in('id', ids.length?ids:['00000000-0000-0000-0000-000000000000']);
   const um = userMap(us||[]);
@@ -1052,7 +1070,7 @@ async function adminMigrateEncrypt(){
     if(st) st.textContent = `Done — ${j.migrated} of ${j.scanned} encrypted.`;
     loadMessages();
   } catch(e){
-    if(st) st.textContent = 'Failed: ' + (e.message||e);
+    if(st) st.textContent = 'Failed: ' + (errMsg(e));
   }
 }
 
@@ -1104,12 +1122,12 @@ async function newAdmin(){
   const { data: u } = await _sb.from('prep_users_admin').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
   if(!u){ alert('No user with that email exists in prep_users.'); return; }
   const { error } = await _sb.from('prep_admins').insert({ user_id: u.id });
-  if(error) alert(error.message); else loadAdmins();
+  if(error) alert(errMsg(error)); else loadAdmins();
 }
 async function removeAdmin(uid){
   if(!confirm('Remove this admin?')) return;
   const { error } = await _sb.from('prep_admins').delete().eq('user_id', uid);
-  if(error) alert(error.message); else loadAdmins();
+  if(error) alert(errMsg(error)); else loadAdmins();
 }
 
 // ═════════════════════════ PULL-TO-REFRESH ═════════════════════════

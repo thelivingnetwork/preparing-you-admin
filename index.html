@@ -178,6 +178,7 @@
       <button class="sidebar-btn"        data-page="elections" onclick="showAdminPage('elections')">Elections</button>
       <button class="sidebar-btn"        data-page="townhalls" onclick="showAdminPage('townhalls')">Townhalls</button>
       <button class="sidebar-btn"        data-page="broadcast" onclick="showAdminPage('broadcast')">Broadcast</button>
+      <button class="sidebar-btn"        data-page="subscribers" onclick="showAdminPage('subscribers')">Subscribers</button>
       <button class="sidebar-btn"        data-page="messages"  onclick="showAdminPage('messages')">Messages</button>
       <button class="sidebar-btn"        data-page="paul"      onclick="showAdminPage('paul')">Paul Logs</button>
       <button class="sidebar-btn"        data-page="admins"    onclick="showAdminPage('admins')">Admins</button>
@@ -308,6 +309,34 @@
       <div class="panel">
         <div class="panel-head"><h2>Recent broadcasts</h2></div>
         <table id="broadcasts-table"><thead><tr><th>When</th><th>Icon</th><th>Message</th><th>Recipients</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div id="page-subscribers" class="admin-page" style="display:none">
+      <h1>Subscribers</h1>
+      <div class="panel">
+        <div class="panel-head"><h2>Message subscribers</h2></div>
+        <p style="font-size:13px;color:#555;line-height:1.6;margin:6px 0 12px">
+          People who gave their email for the free book on the landing page but have
+          <strong>not created an account</strong>. They have no inbox and no push, so this
+          sends <strong>email only</strong>. Anyone who signs up with the same address
+          disappears from this list on their own — there is nothing to tick off.
+          Every message carries a one-click unsubscribe link.
+        </p>
+        <div style="margin:0 0 12px">
+          <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Subject</label>
+          <input id="sb-subject" type="text" placeholder="A message from Preparing You" style="width:100%;max-width:420px">
+        </div>
+        <div style="margin:0 0 12px">
+          <label style="font-size:11px;color:#777;display:block;margin-bottom:4px">Message</label>
+          <textarea id="sb-text" rows="5" placeholder="Write to the people still deciding…"></textarea>
+        </div>
+        <button class="btn btn-sm btn-terra" onclick="sendSubscriberBroadcast()">Send to all subscribers</button>
+        <span id="sb-status" style="margin-left:12px;font-size:13px;color:#555"></span>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>On the list <span id="sb-count" style="color:#999;font-weight:400"></span></h2></div>
+        <table id="subscribers-table"><thead><tr><th>Email</th><th>Joined list</th><th>Last written to</th><th>Source</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
 
@@ -469,6 +498,7 @@ function showAdminPage(name){
   if(name==='elections')  loadElections();
   if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); loadSchedule(); }
   if(name==='broadcast'){ loadBroadcastRecipients(); loadBroadcasts(); }
+  if(name==='subscribers') loadSubscribers();
   if(name==='messages')   loadMessages();
   if(name==='paul')       loadPaul();
   if(name==='admins')     loadAdmins();
@@ -689,6 +719,63 @@ async function sendBroadcast(){
     document.getElementById('bc-text').value = '';
     loadBroadcastRecipients();
     loadBroadcasts();
+  } catch(e){
+    status.textContent = '';
+    alert('Could not send: ' + errMsg(e));
+  }
+}
+
+// ── Subscribers ────────────────────────────────────────────────────────────
+// Reads prep_subscribers_admin, a SECURITY DEFINER view: this app runs as
+// `authenticated`, so it cannot touch the base table. The view already drops
+// anyone who has since created an account, and anyone unsubscribed — the list
+// is derived, never maintained by hand.
+async function loadSubscribers(){
+  const tbody = document.querySelector('#subscribers-table tbody');
+  const count = document.getElementById('sb-count');
+  const { data, error } = await _sb.from('prep_subscribers_admin')
+    .select('*').order('created_at', { ascending:false }).limit(500);
+  if(error){
+    count.textContent = '';
+    tbody.innerHTML = '<tr><td colspan="4">'+esc(errMsg(error))+'</td></tr>';
+    return;
+  }
+  const rows = data || [];
+  count.textContent = rows.length ? '· ' + rows.length : '';
+  if(!rows.length){
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#999">Nobody waiting — everyone who asked for the book has joined.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(s => `<tr>
+    <td>${esc(s.email)}</td>
+    <td>${fmt(s.created_at)}</td>
+    <td>${s.last_sent_at ? fmt(s.last_sent_at) : '—'}</td>
+    <td style="color:#777">${esc(s.source||'')}</td>
+  </tr>`).join('');
+}
+
+async function sendSubscriberBroadcast(){
+  const status  = document.getElementById('sb-status');
+  const subject = document.getElementById('sb-subject').value.trim();
+  const text    = document.getElementById('sb-text').value.trim();
+  if(!text){ alert('Write a message first.'); return; }
+  const n = document.querySelectorAll('#subscribers-table tbody tr').length;
+  if(!confirm('Email this to the '+n+' subscriber(s) on the list?\n\nThey are not members — this goes to their inbox only.')) return;
+  const token = await _freshToken();
+  if(!token){ alert('Your session has expired. Please sign out and sign in again.'); return; }
+  status.textContent = 'Sending…';
+  try {
+    const r = await fetch(_SERVER_URL + '/admin/subscriber-broadcast', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ subject, text })
+    });
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || ('status '+r.status));
+    status.textContent = 'Sending to ' + j.recipients + ' subscriber(s)'
+      + (j.skipped ? ' — ' + j.skipped + ' skipped (already joined).' : '.');
+    document.getElementById('sb-text').value = '';
+    loadSubscribers();
   } catch(e){
     status.textContent = '';
     alert('Could not send: ' + errMsg(e));

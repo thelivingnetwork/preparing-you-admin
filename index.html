@@ -1106,6 +1106,7 @@ function _recDetailRowFor(id){
       + ((r.seconds || 0) < _REC_STUB_SECS ? 'opacity:.55' : '') + '">'
       + `<button class="btn btn-sm" onclick="playRecording(this,'${esc(r.id)}')">Play</button>`
       + `<button class="btn btn-sm btn-ghost" onclick="openRecording(this,'${esc(r.id)}')">Download</button>`
+      + `<button class="btn btn-sm btn-ghost" onclick="copyRecordingLink(this,'${esc(r.id)}')">Copy link</button>`
       + '<span style="font-size:12px">' + esc(_recMins(r.seconds)) + '</span>'
       + '<span style="font-size:12px;color:#6b6b6b">' + esc(_recWhen(r.startedAt)) + '</span>'
       + ((r.seconds || 0) < _REC_STUB_SECS ? '<span style="font-size:11px;color:#6b6b6b">(likely a stub)</span>' : '')
@@ -1209,7 +1210,9 @@ async function loadRecordings(){
         ? recordings.map(r =>
             '<div style="display:flex;align-items:center;gap:10px;padding:3px 0;'
             + ((r.seconds || 0) < _REC_STUB_SECS ? 'opacity:.5' : '') + '">'
-            + '<button class="btn btn-sm" onclick="openRecording(this,\'' + esc(r.id) + '\')">Open</button>'
+            + '<button class="btn btn-sm" onclick="playRecording(this,\'' + esc(r.id) + '\')">Play</button>'
+            + '<button class="btn btn-sm btn-ghost" onclick="openRecording(this,\'' + esc(r.id) + '\')">Download</button>'
+            + '<button class="btn btn-sm btn-ghost" onclick="copyRecordingLink(this,\'' + esc(r.id) + '\')">Copy link</button>'
             + '<span style="font-size:12px">' + esc(_recMins(r.seconds)) + '</span>'
             + '<span style="font-size:12px;color:#6b6b6b">' + esc(_recWhen(r.startedAt)) + '</span>'
             + ((r.seconds || 0) < _REC_STUB_SECS ? '<span style="font-size:11px;color:#6b6b6b">(likely a stub)</span>' : '')
@@ -1309,6 +1312,58 @@ async function playRecording(btn, id){
                 + '<span style="color:#888;font-size:11px">Esc or click outside to close</span>';
   box.appendChild(v); box.appendChild(bar); wrap.appendChild(box);
   document.body.appendChild(wrap);
+}
+
+// Copy a shareable link for one recording.
+//
+// Daily's links expire in about an hour, so the button reports the actual
+// expiry rather than leaving you to find out from a member that it died. Fine
+// for answering a request; not for anything someone opens tomorrow.
+async function copyRecordingLink(btn, id){
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Getting link…';
+  try {
+    const token = await _freshToken();
+    const r = await fetch(_SERVER_URL + '/admin/recording-link', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.link) throw new Error(j.error || ('HTTP ' + r.status));
+
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(j.link);
+      copied = true;
+    } catch(_){
+      // The clipboard API needs a secure context and, in some browsers, a write
+      // inside the click task — which the await above has already spent. Fall
+      // back to a selection-based copy rather than failing outright.
+      const ta = document.createElement('textarea');
+      ta.value = j.link;
+      ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px';
+      document.body.appendChild(ta); ta.select();
+      try { copied = document.execCommand('copy'); } catch(_){}
+      ta.remove();
+    }
+
+    const until = j.expires
+      ? new Date(j.expires * 1000).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })
+      : null;
+    if(copied){
+      btn.textContent = until ? 'Copied — valid until ' + until : 'Copied ✓';
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+      return;
+    }
+    // Could not reach the clipboard at all — show the link so it can be copied
+    // by hand instead of silently doing nothing.
+    window.prompt('Copy this link' + (until ? ' (valid until ' + until + ')' : '') + ':', j.link);
+    btn.textContent = orig; btn.disabled = false;
+  } catch(e){
+    alert('Could not get a link: ' + errMsg(e));
+    btn.textContent = orig; btn.disabled = false;
+  }
 }
 
 async function openRecording(btn, id){

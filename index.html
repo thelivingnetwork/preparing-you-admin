@@ -1264,12 +1264,39 @@ async function playRecording(btn, id){
   const v = document.createElement('video');
   v.src = link; v.controls = true; v.autoplay = true;
   v.style.cssText = 'display:block;width:100%;max-height:78vh;background:#000';
-  v.onerror = () => {
-    box.innerHTML = '<div style="padding:20px;color:#fff;font-size:13px">'
-      + 'This recording could not be streamed in the browser. '
-      + '<a href="' + esc(link) + '" style="color:#f0c987">Download it instead</a>'
-      + ' &mdash; the link is valid for about an hour.</div>';
+
+  // A stalled spinner tells you nothing and, worse, keeps pulling the file in
+  // the background. If nothing is playing shortly, stop and say why: an mp4
+  // whose index sits at the end of the file cannot start early, and no amount
+  // of waiting changes that.
+  const explain = async (headline) => {
+    v.removeAttribute('src'); v.load();   // stop the background fetch
+    box.innerHTML = '<div id="rec-why" style="padding:20px;color:#fff;font-size:13px;line-height:1.55">'
+      + esc(headline) + ' Checking why…</div>';
+    let detail = '';
+    try {
+      const token = await _freshToken();
+      const r = await fetch(_SERVER_URL + '/admin/recording-probe', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+        body: JSON.stringify({ id })
+      });
+      const j = await r.json().catch(()=>({}));
+      if(r.ok && j.verdict) detail = j.verdict;
+      else detail = j.error || ('probe failed: HTTP ' + r.status);
+    } catch(e){ detail = errMsg(e); }
+    const why = document.getElementById('rec-why');
+    if(why) why.innerHTML = '<p style="margin:0 0 10px">' + esc(headline) + '</p>'
+      + '<p style="margin:0 0 14px;color:#c9c2b6">' + esc(detail) + '</p>'
+      + '<a href="' + esc(link) + '" style="color:#f0c987">Download this recording instead</a>'
+      + '<span style="color:#888"> &middot; the link is valid for about an hour</span>';
   };
+
+  let settled = false;
+  const stall = setTimeout(() => { if(!settled) explain('This recording will not stream in the browser.'); }, 12000);
+  v.addEventListener('playing', () => { settled = true; clearTimeout(stall); });
+  v.addEventListener('loadeddata', () => { settled = true; clearTimeout(stall); });
+  v.onerror = () => { settled = true; clearTimeout(stall); explain('This recording could not be played in the browser.'); };
   const bar = document.createElement('div');
   bar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111';
   bar.innerHTML = '<a href="' + esc(link) + '" style="color:#f0c987;font-size:12px">Download this recording</a>'

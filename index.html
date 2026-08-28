@@ -1261,9 +1261,15 @@ async function playRecording(btn, id){
 
   const box = document.createElement('div');
   box.style.cssText = 'background:#000;border-radius:10px;overflow:hidden;max-width:1100px;width:100%';
-  const v = document.createElement('video');
+  // Townhalls record audio-only now, which arrives as .m4a. A video element
+  // would play it as a black rectangle, so pick the element from the file the
+  // link actually points at — older townhalls are still mp4.
+  const isAudio = /\.m4a(\?|$)/i.test(link) || /\.mp3(\?|$)/i.test(link);
+  const v = document.createElement(isAudio ? 'audio' : 'video');
   v.src = link; v.controls = true; v.autoplay = true;
-  v.style.cssText = 'display:block;width:100%;max-height:78vh;background:#000';
+  v.style.cssText = isAudio
+    ? 'display:block;width:100%;padding:26px 18px;background:#111'
+    : 'display:block;width:100%;max-height:78vh;background:#000';
 
   // A stalled spinner tells you nothing and, worse, keeps pulling the file in
   // the background. If nothing is playing shortly, stop and say why: an mp4

@@ -246,7 +246,7 @@
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Log</h2><span class="panel-meta">Lifecycle of every scheduled townhall</span></div>
-        <table id="townhall-log-table"><thead><tr><th>Scheduled</th><th>Title</th><th>Reminder sent</th><th>Started</th><th>Ended</th><th>Duration</th></tr></thead><tbody></tbody></table>
+        <table id="townhall-log-table"><thead><tr><th>Scheduled</th><th>Title</th><th>Reminder sent</th><th>Started</th><th>Ended</th><th>Duration</th><th>Recordings</th></tr></thead><tbody></tbody></table>
       </div>
 
       <!-- Recording URLs are written only by the /webhooks/daily handler, so an
@@ -509,7 +509,7 @@ function showAdminPage(name){
   if(name==='users')      loadUsers();
   if(name==='pcms')       loadPcms();
   if(name==='elections')  loadElections();
-  if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); loadSchedule(); }
+  if(name==='townhalls'){ loadTownhalls(); loadHosts(); loadTownhallLog(); loadSchedule(); loadRecordings(); }
   if(name==='broadcast'){ loadBroadcastRecipients(); loadBroadcasts(); }
   if(name==='subscribers') loadSubscribers();
   if(name==='messages')   loadMessages();
@@ -1063,7 +1063,7 @@ async function loadTownhallLog(){
   const tb = document.querySelector('#townhall-log-table tbody');
   if(!tb) return;
   if(!data || !data.length){
-    tb.innerHTML = '<tr><td colspan="6" class="empty">No townhalls yet.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="empty">No townhalls yet.</td></tr>';
     return;
   }
   tb.innerHTML = data.map(th => {
@@ -1078,8 +1078,47 @@ async function loadTownhallLog(){
       <td>${fmt(th.live_at)}</td>
       <td>${fmt(th.ended_at)}</td>
       <td>${_formatDuration(th.live_at, th.ended_at)}</td>
-    </tr>`;
+      <td>${_recCellFor(th.id)}</td>
+    </tr>` + _recDetailRowFor(th.id);
   }).join('');
+}
+
+// ── Recordings on the log row ─────────────────────────────────────────────
+// The recordings belong to the townhall, so they live on its row rather than
+// in a detached list you have to cross-reference by date. The cell renders
+// from _recByTownhall, which loadRecordings() fills; before that lands it
+// shows nothing rather than a misleading "none".
+let _recByTownhall = new Map();
+
+function _recCellFor(id){
+  const list = _recByTownhall.get(id);
+  if(!list) return '<span style="font-size:11px;color:#9a9a9a">—</span>';
+  if(!list.length) return '<span style="font-size:11px;color:#9a9a9a">none</span>';
+  return `<button class="btn-link" style="font-size:12px" onclick="toggleRecRow(${id},this)">`
+       + list.length + (list.length === 1 ? ' recording' : ' recordings') + ' ▸</button>';
+}
+
+function _recDetailRowFor(id){
+  const list = _recByTownhall.get(id) || [];
+  if(!list.length) return '';
+  const rows = list.map(r =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;'
+      + ((r.seconds || 0) < _REC_STUB_SECS ? 'opacity:.55' : '') + '">'
+      + `<button class="btn btn-sm" onclick="playRecording(this,'${esc(r.id)}')">Play</button>`
+      + `<button class="btn btn-sm btn-ghost" onclick="openRecording(this,'${esc(r.id)}')">Download</button>`
+      + '<span style="font-size:12px">' + esc(_recMins(r.seconds)) + '</span>'
+      + '<span style="font-size:12px;color:#6b6b6b">' + esc(_recWhen(r.startedAt)) + '</span>'
+      + ((r.seconds || 0) < _REC_STUB_SECS ? '<span style="font-size:11px;color:#6b6b6b">(likely a stub)</span>' : '')
+      + '</div>').join('');
+  return `<tr id="rec-row-${id}" style="display:none"><td colspan="7" style="background:rgba(0,0,0,.02)">${rows}</td></tr>`;
+}
+
+function toggleRecRow(id, btn){
+  const row = document.getElementById('rec-row-' + id);
+  if(!row) return;
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : '';
+  btn.innerHTML = btn.innerHTML.replace(open ? '▾' : '▸', open ? '▸' : '▾');
 }
 
 async function loadHosts(){
@@ -1150,6 +1189,11 @@ async function loadRecordings(){
   const ths = j.townhalls || [], orphans = j.orphans || [];
   const withRec = ths.filter(t => t.recordings.length).length;
 
+  // Feed the log rows, which are where these actually belong, then re-render
+  // them now that we know what footage each townhall has.
+  _recByTownhall = new Map(ths.map(t => [t.id, t.recordings]));
+  loadTownhallLog();
+
   sum.innerHTML =
     '<p style="margin:0 0 6px"><b>' + j.total + ' recording(s)</b> held by Daily &middot; '
     + withRec + ' of ' + ths.length + ' townhalls have footage'
@@ -1173,13 +1217,65 @@ async function loadRecordings(){
         : '<div style="font-size:12px;color:#6b6b6b">No recording found for this room.</div>')
     + '</div>';
 
-  list.innerHTML =
-    ths.map(t => rows(fmt(t.when) + ' — ' + (t.title || 'Townhall'),
-                      t.room || 'no room set', t.recordings)).join('')
-    + (orphans.length
-        ? '<h3 style="margin:18px 0 0;font-size:13px">Rooms with no matching townhall</h3>'
-          + orphans.map(o => rows(o.room, 'no townhall row references this room', o.recordings)).join('')
-        : '');
+  // Matched recordings now render on the log rows above, so this panel keeps
+  // only what has nowhere else to go.
+  list.innerHTML = orphans.length
+    ? '<h3 style="margin:14px 0 0;font-size:13px">Rooms with no matching townhall</h3>'
+      + orphans.map(o => rows(o.room, 'no townhall row references this room', o.recordings)).join('')
+    : '';
+}
+
+// ── Player ────────────────────────────────────────────────────────────────
+// Daily serves recordings as an mp4 the browser saves rather than plays, so
+// Open/Download means waiting for gigabytes before seeing a second of it. A
+// video element fetches the same URL directly and streams it, seeking included,
+// because Content-Disposition governs navigation and not media loads. If that
+// ever stops holding, the error path offers the download instead of dead air.
+async function playRecording(btn, id){
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Loading…';
+  let link;
+  try {
+    const token = await _freshToken();
+    const r = await fetch(_SERVER_URL + '/admin/recording-link', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.link) throw new Error(j.error || ('HTTP ' + r.status));
+    link = j.link;
+  } catch(e){
+    alert('Could not get a link: ' + errMsg(e));
+    btn.disabled = false; btn.textContent = orig; return;
+  }
+  btn.disabled = false; btn.textContent = orig;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:60;display:flex;'
+    + 'align-items:center;justify-content:center;padding:20px';
+  const close = () => wrap.remove();
+  wrap.onclick = e => { if(e.target === wrap) close(); };
+  const esc2 = e => { if(e.key === 'Escape'){ close(); document.removeEventListener('keydown', esc2); } };
+  document.addEventListener('keydown', esc2);
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#000;border-radius:10px;overflow:hidden;max-width:1100px;width:100%';
+  const v = document.createElement('video');
+  v.src = link; v.controls = true; v.autoplay = true;
+  v.style.cssText = 'display:block;width:100%;max-height:78vh;background:#000';
+  v.onerror = () => {
+    box.innerHTML = '<div style="padding:20px;color:#fff;font-size:13px">'
+      + 'This recording could not be streamed in the browser. '
+      + '<a href="' + esc(link) + '" style="color:#f0c987">Download it instead</a>'
+      + ' &mdash; the link is valid for about an hour.</div>';
+  };
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111';
+  bar.innerHTML = '<a href="' + esc(link) + '" style="color:#f0c987;font-size:12px">Download this recording</a>'
+                + '<span style="color:#888;font-size:11px">Esc or click outside to close</span>';
+  box.appendChild(v); box.appendChild(bar); wrap.appendChild(box);
+  document.body.appendChild(wrap);
 }
 
 async function openRecording(btn, id){

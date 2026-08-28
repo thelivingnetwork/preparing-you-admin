@@ -252,10 +252,14 @@
       <!-- Recording URLs are written only by the /webhooks/daily handler, so an
            empty column means either "no recordings exist" or "recordings exist
            but nothing reported them". This asks Daily directly. Read-only. -->
+      <!-- Recordings live in Daily, not here. Access links expire after about an
+           hour, so nothing is stored: this lists what Daily holds and mints a
+           fresh link only when you click one. -->
       <div class="panel">
-        <div class="panel-head"><h2>Recordings diagnostic</h2><span class="panel-meta">Asks Daily what it holds and whether it is configured to tell us</span></div>
-        <button class="btn btn-sm btn-terra" onclick="runDailyDiagnostic()">Check Daily</button>
-        <div id="daily-diag" style="margin-top:12px;font-size:13px"></div>
+        <div class="panel-head"><h2>Recordings</h2><span class="panel-meta">Held by Daily &middot; links are generated fresh on each click, never stored</span></div>
+        <button class="btn btn-sm btn-terra" onclick="loadRecordings()">Load recordings</button>
+        <div id="rec-summary" style="margin-top:12px;font-size:13px"></div>
+        <div id="rec-list" style="margin-top:10px"></div>
       </div>
     </div>
 
@@ -1114,50 +1118,92 @@ async function removeHost(uid){
 // Private messages are end-to-end encrypted at rest. This page shows only
 // metadata (who/when, attachment name) — never the text. A specific message
 // can be revealed for safeguarding, and every reveal is logged.
-async function runDailyDiagnostic(){
-  const box = document.getElementById('daily-diag');
-  box.textContent = 'Asking Daily…';
+// ── Townhall recordings ───────────────────────────────────────────────────
+// Nothing here is persisted. The server lists what Daily holds and mints a
+// short-lived access link per click, because Daily's links expire in about an
+// hour — storing one would guarantee a dead link later.
+const _recMins = s => !s ? '—' : (s < 60 ? s + 's' : Math.round(s/60) + ' min');
+const _recWhen = t => t ? new Date(t*1000).toLocaleString() : '—';
+
+// Recording restarts whenever someone joins an empty room, so most townhalls
+// carry a real session plus a few seconds-long stubs. Dimming them keeps the
+// substantive recording obvious without hiding anything.
+const _REC_STUB_SECS = 120;
+
+async function loadRecordings(){
+  const sum = document.getElementById('rec-summary');
+  const list = document.getElementById('rec-list');
+  sum.textContent = 'Asking Daily…'; list.innerHTML = '';
   const token = await _freshToken();
-  if(!token){ box.textContent = 'Not signed in.'; return; }
+  if(!token){ sum.textContent = 'Not signed in.'; return; }
   let j = {};
   try {
-    const r = await fetch(_SERVER_URL + '/admin/daily-diagnostic', {
+    const r = await fetch(_SERVER_URL + '/admin/townhall-recordings', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token }
     });
     j = await r.json().catch(()=>({}));
-    if(!r.ok){ box.textContent = 'Error: ' + (j.error || ('HTTP ' + r.status)); return; }
-  } catch(e){ box.textContent = errMsg(e); return; }
+    if(!r.ok){ sum.textContent = 'Error: ' + esc(j.error || ('HTTP ' + r.status)); return; }
+  } catch(e){ sum.textContent = errMsg(e); return; }
+  if(j.ok === false){ sum.textContent = j.reason || 'Not configured.'; return; }
 
-  if(j.ok === false){ box.textContent = j.reason || 'Not configured.'; return; }
+  const ths = j.townhalls || [], orphans = j.orphans || [];
+  const withRec = ths.filter(t => t.recordings.length).length;
 
-  const recs = j.recordings || [];
-  const hooks = j.webhooks || [];
-  const ths  = j.townhalls || [];
-  const linked = ths.filter(t => t.hasUrl).length;
-  const mins = s => s ? Math.round(s/60) + ' min' : '—';
-  const when = t => t ? new Date(t*1000).toLocaleString() : '—';
+  sum.innerHTML =
+    '<p style="margin:0 0 6px"><b>' + j.total + ' recording(s)</b> held by Daily &middot; '
+    + withRec + ' of ' + ths.length + ' townhalls have footage'
+    + (orphans.length ? ' &middot; ' + orphans.length + ' room(s) with no matching townhall' : '') + '</p>'
+    + (j.truncated ? '<p style="color:#9c3030;margin:0 0 6px">More than 2000 recordings — the list is truncated.</p>' : '')
+    + (j.webhookSecretSet ? '' : '<p style="color:#9c3030;margin:0">Daily webhook signing secret is not set — /webhooks/daily accepts unsigned posts.</p>');
 
-  // The two findings that actually decide what to do next, stated plainly.
-  const verdict = recs.length
-    ? (hooks.length
-        ? 'Daily holds ' + recs.length + ' recording(s) and a webhook is configured.'
-        : 'Daily holds ' + recs.length + ' recording(s), but NO webhook is configured — which is why the recording URLs are empty. The videos exist and can be linked up.')
-    : 'Daily holds no recordings. Nothing was captured, so there is nothing to retrieve.';
+  const rows = (label, sub, recordings) =>
+    '<div style="padding:10px 0;border-top:1px solid rgba(0,0,0,.08)">'
+    + '<div style="font-weight:600">' + esc(label) + '</div>'
+    + '<div style="font-size:11px;color:#6b6b6b;margin-bottom:6px">' + esc(sub) + '</div>'
+    + (recordings.length
+        ? recordings.map(r =>
+            '<div style="display:flex;align-items:center;gap:10px;padding:3px 0;'
+            + ((r.seconds || 0) < _REC_STUB_SECS ? 'opacity:.5' : '') + '">'
+            + '<button class="btn btn-sm" onclick="openRecording(this,\'' + esc(r.id) + '\')">Open</button>'
+            + '<span style="font-size:12px">' + esc(_recMins(r.seconds)) + '</span>'
+            + '<span style="font-size:12px;color:#6b6b6b">' + esc(_recWhen(r.startedAt)) + '</span>'
+            + ((r.seconds || 0) < _REC_STUB_SECS ? '<span style="font-size:11px;color:#6b6b6b">(likely a stub)</span>' : '')
+            + '</div>').join('')
+        : '<div style="font-size:12px;color:#6b6b6b">No recording found for this room.</div>')
+    + '</div>';
 
-  box.innerHTML =
-    '<p style="margin:0 0 10px"><b>' + esc(verdict) + '</b></p>'
-    + '<p style="margin:0 0 10px">Webhook signing secret set: <b>' + (j.webhookSecretSet ? 'yes' : 'NO — the endpoint accepts unsigned posts') + '</b></p>'
-    + (j.recordingsError ? '<p style="color:#9c3030">Recordings lookup error: ' + esc(String(j.recordingsError)) + '</p>' : '')
-    + (j.webhooksError ? '<p style="color:#9c3030">Webhook lookup error: ' + esc(String(j.webhooksError)) + '</p>' : '')
-    + '<p style="margin:0 0 6px">Townhalls with a stored recording URL: <b>' + linked + '</b> of ' + ths.length + '</p>'
-    + (hooks.length ? '<p style="margin:0 0 6px">Webhooks: ' + hooks.map(h => esc(h.url || '?') + ' (' + esc(h.state || '?') + ')').join(', ') + '</p>' : '')
-    + (recs.length
-        ? '<table style="margin-top:8px"><thead><tr><th>Room</th><th>Started</th><th>Length</th><th>Status</th></tr></thead><tbody>'
-          + recs.map(r => '<tr><td>' + esc(r.room || '—') + '</td><td>' + esc(when(r.startedAt)) + '</td><td>'
-                        + esc(mins(r.seconds)) + '</td><td>' + esc(r.status || '—') + '</td></tr>').join('')
-          + '</tbody></table>'
+  list.innerHTML =
+    ths.map(t => rows(fmt(t.when) + ' — ' + (t.title || 'Townhall'),
+                      t.room || 'no room set', t.recordings)).join('')
+    + (orphans.length
+        ? '<h3 style="margin:18px 0 0;font-size:13px">Rooms with no matching townhall</h3>'
+          + orphans.map(o => rows(o.room, 'no townhall row references this room', o.recordings)).join('')
         : '');
+}
+
+async function openRecording(btn, id){
+  // The link arrives asynchronously, by which point the click gesture is spent
+  // and window.open would be blocked. Claim the tab now, fill it in after.
+  const tab = window.open('', '_blank');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Getting link…';
+  try {
+    const token = await _freshToken();
+    const r = await fetch(_SERVER_URL + '/admin/recording-link', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.link) throw new Error(j.error || ('HTTP ' + r.status));
+    if(tab) tab.location = j.link; else window.location = j.link;
+  } catch(e){
+    if(tab) tab.close();
+    alert('Could not get a link: ' + errMsg(e));
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
 }
 
 async function loadMessages(){

@@ -208,12 +208,12 @@
     <div id="page-townhalls" class="admin-page" style="display:none">
       <h1>Townhalls</h1>
       <div class="panel">
-        <div class="panel-head"><h2>Standing weekly townhall</h2><span class="panel-meta">Auto-creates the next meeting each week and emails everyone</span></div>
+        <div class="panel-head"><h2>Standing monthly townhall</h2><span class="panel-meta">Auto-creates the next meeting each month (first chosen day of the month) and emails everyone</span></div>
         <div id="sched-body" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
           <label style="display:flex;align-items:center;gap:8px;font-size:14px">
             <input type="checkbox" id="sched-enabled" onchange="markScheduleDirty()" style="width:18px;height:18px"> Enabled
           </label>
-          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Day
+          <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Day (first of the month)
             <select id="sched-weekday" onchange="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit">
               <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
               <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option>
@@ -227,7 +227,7 @@
             <input type="text" id="sched-tz" placeholder="America/New_York" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:180px">
           </label>
           <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Title
-            <input type="text" id="sched-title" value="Weekly Townhall" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:160px">
+            <input type="text" id="sched-title" value="Monthly Townhall" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:160px">
           </label>
           <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--walnut-mid)">Topic
             <input type="text" id="sched-topic" value="Open discussion" oninput="markScheduleDirty()" style="border:1px solid var(--line);padding:5px 6px;border-radius:4px;font-family:inherit;min-width:160px">
@@ -954,7 +954,7 @@ async function newTownhall(){
   if(!v) return;
   const at = _localInputToIso(v);
   if(!at){ alert('Could not parse date.'); return; }
-  const title = prompt('Title:', 'Weekly Townhall') || 'Townhall';
+  const title = prompt('Title:', 'Monthly Townhall') || 'Townhall';
   const { error } = await _sb.from('prep_townhalls').insert({ scheduled_at: at, title, topic: 'Open discussion', daily_room: 'preparing-you-townhall-' + Date.now().toString(36) });
   if(error){ alert(errMsg(error)); return; }
   _fireAnnouncements();
@@ -967,7 +967,7 @@ function _fireAnnouncements(){
   fetch(_SERVER_URL + '/townhall/announcements/run', { method: 'POST' }).catch(()=>{});
 }
 
-// ═════════════════════════ Standing weekly schedule ═════════════════════════
+// ═════════════════════════ Standing monthly schedule ═════════════════════════
 function markScheduleDirty(){
   const btn = document.getElementById('sched-save-btn');
   if(!btn) return;
@@ -993,7 +993,7 @@ async function loadSchedule(){
       document.getElementById('sched-time').value =
         String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0');
       document.getElementById('sched-tz').value = s.timezone || document.getElementById('sched-tz').value;
-      document.getElementById('sched-title').value = s.title || 'Weekly Townhall';
+      document.getElementById('sched-title').value = (!s.title || s.title === 'Weekly Townhall') ? 'Monthly Townhall' : s.title;
       document.getElementById('sched-topic').value = s.topic || 'Open discussion';
     }
     const btn = document.getElementById('sched-save-btn');
@@ -1009,7 +1009,7 @@ function _renderScheduleStatus(s){
   if(!s || !s.enabled){ el.textContent = 'Standing townhall is off — meetings are created manually below.'; return; }
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const t = String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0');
-  el.textContent = `On: every ${days[s.weekday]} at ${t} (${s.timezone}). Each meeting is auto-created about 4 days ahead and everyone is emailed in their own local time. (If the next one is further out than that, it'll appear here a few days before.)`;
+  el.textContent = `On: the first ${days[s.weekday]} of each month at ${t} (${s.timezone}). Each meeting is auto-created about 4 days ahead and everyone is emailed in their own local time. (If the next one is further out than that, it'll appear here a few days before.)`;
 }
 
 async function saveSchedule(){
@@ -1022,7 +1022,7 @@ async function saveSchedule(){
     hour: parseInt(hh, 10),
     minute: parseInt(mm, 10),
     timezone: document.getElementById('sched-tz').value.trim() || 'America/New_York',
-    title: document.getElementById('sched-title').value.trim() || 'Weekly Townhall',
+    title: document.getElementById('sched-title').value.trim() || 'Monthly Townhall',
     topic: document.getElementById('sched-topic').value.trim() || 'Open discussion'
   };
   const btn = document.getElementById('sched-save-btn');
